@@ -109,8 +109,32 @@ export function DraftFields({
   );
 }
 
-export function RealStudio() {
-  const { companyId } = useStore();
+export function RealStudio({
+  onboarding = false,
+  onComplete,
+}: { onboarding?: boolean; onComplete?: () => void } = {}) {
+  const { companyId, state, companyBusy } = useStore();
+  const [canComplete, setCanComplete] = useState(false);
+  const [multi, setMulti] = useState(onboarding);
+  const requestedPlatforms = multi
+    ? state.preferences.platforms.slice(0, 3)
+    : null;
+  useEffect(() => {
+    if (!companyId || !onboarding) return;
+    let live = true;
+    companyRequest(
+      companyId,
+      "/onboarding/readiness",
+      z.object({ has_generated_post: z.boolean() }),
+    )
+      .then((r) => {
+        if (live) setCanComplete(r.has_generated_post);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [companyId, onboarding]);
   const operation = useAIJob(companyId, "content_generation");
   const [platform, setPlatform] = useState<Draft["platform"]>("Instagram"),
     [type, setType] = useState("educational"),
@@ -130,7 +154,11 @@ export function RealStudio() {
   useEffect(() => {
     if (!companyId) return;
     let live = true;
-    companyRequest(companyId, "/ai-capabilities", z.object({ image_available: z.boolean() }).passthrough())
+    companyRequest(
+      companyId,
+      "/ai-capabilities",
+      z.object({ image_available: z.boolean() }).passthrough(),
+    )
       .then((c) => live && setImagesAvailable(c.image_available))
       .catch(() => live && setImagesAvailable(false));
     return () => {
@@ -221,6 +249,15 @@ export function RealStudio() {
               </option>
             ))}
           </Select>
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={multi}
+              onChange={(e) => setMulti(e.target.checked)}
+            />
+            Generate versions for saved platforms (up to 3):{" "}
+            {state.preferences.platforms.slice(0, 3).join(", ")}
+          </label>
           <Input
             label="What's the story?"
             value={topic}
@@ -264,14 +301,23 @@ export function RealStudio() {
             onClick={() =>
               act(async () => {
                 await startOperation(companyId!, "/content-generations", {
-                  platforms: [platform],
+                  platforms: requestedPlatforms?.length
+                    ? requestedPlatforms
+                    : [platform],
                   content_type: type,
                   topic,
                   instructions,
                   include_images: imagesAvailable && includeImages,
                   aspect_ratios:
                     imagesAvailable && includeImages
-                      ? { [platform]: ratio }
+                      ? requestedPlatforms?.length
+                        ? Object.fromEntries(
+                            requestedPlatforms.map((p) => [
+                              p,
+                              PLATFORM_ASPECT[p],
+                            ]),
+                          )
+                        : { [platform]: ratio }
                       : null,
                 });
                 operation.reload();
@@ -356,6 +402,7 @@ export function RealStudio() {
                           result_index: active,
                         }),
                       );
+                      setCanComplete(true);
                     })
                   }
                 >
@@ -380,7 +427,7 @@ export function RealStudio() {
               </div>
               {saved && (
                 <p role="status">
-                  Draft saved to your company. Edit this draft in My Posts.
+                  Draft saved to your company. Edit it in the Post Library.
                   Saving this result again returns the existing draft.
                 </p>
               )}
@@ -427,6 +474,20 @@ export function RealStudio() {
           )}
         </section>
       </div>
+      {onboarding && (
+        <div className="onboarding-actions">
+          <p>
+            Save a generated draft to finish. Images can keep processing
+            independently.
+          </p>
+          <Button
+            disabled={!canComplete || busy || companyBusy}
+            onClick={onComplete}
+          >
+            Complete onboarding
+          </Button>
+        </div>
+      )}
     </>
   );
 }
@@ -630,7 +691,13 @@ export function SavedEditor({
       </div>
       <PostImages
         companyId={companyId}
-        post={{ ...post, ...baseline, revision, status, primary_asset_id: primary }}
+        post={{
+          ...post,
+          ...baseline,
+          revision,
+          status,
+          primary_asset_id: primary,
+        }}
         onPostChanged={applyServerPost}
       />
       <VersionHistory
@@ -638,7 +705,9 @@ export function SavedEditor({
         postId={post.id}
         onRestore={(fields) => {
           setValue({ ...value, ...fields });
-          setMessage("Earlier text loaded into the editor. Review, then save changes to restore it.");
+          setMessage(
+            "Earlier text loaded into the editor. Review, then save changes to restore it.",
+          );
         }}
       />
       {status === "approved" &&

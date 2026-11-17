@@ -37,14 +37,14 @@ def aspect_label(width,height):
     g=gcd(width,height);return f'{width//g}:{height//g}'[:8]
 
 
-def validate_image(data,mime):
+def validate_image(data,mime,minimum=64):
     """Validate PNG/JPEG (and WEBP uploads), strip metadata and re-encode as single-frame PNG."""
     if mime not in INPUT_FORMATS or not data or len(data)>limits.max_image_bytes:
         raise ExtractionError('invalid_image','Unsupported image type or file size. Use PNG, JPEG or WEBP up to the size limit.')
     try:
         with Image.open(io.BytesIO(data)) as im:
             if im.format!=INPUT_FORMATS[mime]:raise ValueError()
-            if getattr(im,'n_frames',1)!=1 or max(im.size)>4096 or min(im.size)<64 or im.width*im.height>16_000_000:raise ValueError()
+            if getattr(im,'n_frames',1)!=1 or max(im.size)>4096 or min(im.size)<minimum or im.width*im.height>16_000_000:raise ValueError()
             im.verify()
         with Image.open(io.BytesIO(data)) as im:
             clean=im.convert('RGB');out=io.BytesIO();clean.save(out,format='PNG')

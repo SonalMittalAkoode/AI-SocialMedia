@@ -42,6 +42,27 @@ export function Preferences() {
   return (
     <div className="preferences-layout">
       <div>
+        <Textarea
+          label="Content target audience"
+          value={p.targetAudience || ""}
+          placeholder={state.workspace.company.audience}
+          onChange={(e) => update({ targetAudience: e.target.value })}
+        />
+        <Textarea
+          label="Content topics · comma separated"
+          value={p.topics || ""}
+          onChange={(e) => update({ topics: e.target.value })}
+        />
+        <Textarea
+          label="Topics to avoid · comma separated"
+          value={p.excludedTopics || ""}
+          onChange={(e) => update({ excludedTopics: e.target.value })}
+        />
+        <Textarea
+          label="Visual style preferences"
+          value={p.visualStyle || ""}
+          onChange={(e) => update({ visualStyle: e.target.value })}
+        />
         <section className="preference-section">
           <h3>Where do you want to show up?</h3>
           <p>Choose at least one platform. Connect accounts later.</p>

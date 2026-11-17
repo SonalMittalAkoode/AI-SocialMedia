@@ -148,10 +148,6 @@ export function useCompanyPersistence(
         const loaded = await api.getCompanyBundle(company.id);
         bundle.current = loaded;
         result = applyBundle(source, active, loaded);
-        // Logo uploads remain local previews; only validated URL references belong in PostgreSQL.
-        if (cache?.workspace.company.identity.logo.startsWith("data:image/"))
-          result.workspace.company.identity.logo =
-            cache.workspace.company.identity.logo;
         const candidate = cache || old;
         const differs =
           candidate &&
@@ -311,7 +307,28 @@ export function useCompanyPersistence(
     });
   const prepareExtraction = () =>
     write(async () => {
-      const snapshot = current.current;
+      const snapshot = {
+        ...current.current,
+        workspace: {
+          ...current.current.workspace,
+          company: { ...current.current.workspace.company },
+        },
+      };
+      if (!snapshot.workspace.company.name.trim()) {
+        let host = "";
+        try {
+          host = new URL(snapshot.workspace.company.website).hostname.replace(
+            /^www\./,
+            "",
+          );
+        } catch {
+          throw new Error("Enter a public website URL or business name.");
+        }
+        snapshot.workspace.company = {
+          ...snapshot.workspace.company,
+          name: host,
+        };
+      }
       const loaded = await business(snapshot);
       accept(loaded, snapshot);
       return loaded.company.id;
@@ -319,8 +336,16 @@ export function useCompanyPersistence(
   const approveExtraction = (id: string, fields: ApprovedFields) =>
     write(async () => {
       if (!bundle.current) throw new Error("Save your company first.");
-      const loaded = bundle.current;
       const snapshot = current.current;
+      // Save manual edits before applying only the explicitly chosen findings.
+      // Unknown/unselected extraction fields must not discard the user's draft.
+      const loaded = await business(snapshot);
+      const updated = await api.patchBrand(loaded.company.id, {
+        ...brandPayload(snapshot),
+        revision: loaded.brand.revision,
+      });
+      loaded.brand = updated;
+      bundle.current = loaded;
       setRecoverableDraft(snapshot);
       if (user.current)
         try {
@@ -334,7 +359,7 @@ export function useCompanyPersistence(
         id,
         fields,
         loaded.company.revision,
-        loaded.brand.revision,
+        updated.revision,
       );
       return accept(await api.getCompanyBundle(loaded.company.id));
     });

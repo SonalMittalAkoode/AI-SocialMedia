@@ -14,6 +14,7 @@ from app.api.intelligence import router as intelligence_router
 from app.api.content import router as content_router
 from app.api.scheduling import router as scheduling_router
 from app.api.crm import router as crm_router
+from app.api.brand_media import router as brand_media_router
 from app.core.auth_config import FRONTEND_ORIGINS
 
 
@@ -46,6 +47,7 @@ app.include_router(intelligence_router, prefix="/api/v1")
 app.include_router(content_router, prefix="/api/v1")
 app.include_router(scheduling_router, prefix="/api/v1")
 app.include_router(crm_router, prefix="/api/v1")
+app.include_router(brand_media_router, prefix="/api/v1")
 
 
 @app.exception_handler(RequestValidationError)

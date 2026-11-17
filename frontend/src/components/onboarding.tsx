@@ -17,6 +17,7 @@ import { Preferences } from "@/components/preferences";
 import { Studio } from "@/components/content/studio";
 import { useStore } from "@/store/provider";
 import { BrandExtraction } from "@/components/brand-extraction";
+import { IndustrySelect } from "@/components/industry-select";
 import { steps } from "@/lib/storage";
 import { validBrand } from "@/lib/validations";
 import { CompanyProfile } from "@/types";
@@ -32,14 +33,14 @@ const labels = [
 const headings = [
   "Let’s get to know your business.",
   "A brand that feels like you.",
-  "Meet your creative neighborhood.",
+  "Know your competition. Stay ahead.",
   "Your content. Your kind of way.",
   "Let’s make your first impression.",
 ];
 const descriptions = [
   "A website. A little context. A world of possibilities.",
   "Review your brand profile and make every detail your own.",
-  "Explore fictional brands, find a little inspiration, and choose who to follow.",
+  "Discover relevant businesses, understand their positioning, and uncover new opportunities for your brand. This step is optional.",
   "Give your creative partner a little direction. You can always change it later.",
   "Turn your brand’s story into something worth stopping the scroll for.",
 ];
@@ -247,10 +248,10 @@ export function Onboarding({ step }: { step: string }) {
                   value={b.name}
                   onChange={(e) => update({ name: e.target.value })}
                 />
-                <Input
+                <IndustrySelect
                   label="Industry (optional)"
                   value={b.industry}
-                  onChange={(e) => update({ industry: e.target.value })}
+                  onChange={(industry) => update({ industry })}
                 />
               </div>
               <Textarea
@@ -259,10 +260,37 @@ export function Onboarding({ step }: { step: string }) {
                 onChange={(e) => update({ description: e.target.value })}
               />
               <Input
-                label="Business location (optional)"
-                value={b.location}
-                onChange={(e) => update({ location: e.target.value })}
+                label="City"
+                value={b.city || ""}
+                onChange={(e) => update({ city: e.target.value })}
               />
+              <Input
+                label="Country"
+                value={b.country || ""}
+                onChange={(e) => update({ country: e.target.value })}
+              />
+              <div className="form-grid">
+                <Input
+                  label="Business type"
+                  value={b.businessType || ""}
+                  onChange={(e) => update({ businessType: e.target.value })}
+                />
+                <Input
+                  label="State / region"
+                  value={b.state || ""}
+                  onChange={(e) => update({ state: e.target.value })}
+                />
+                <Input
+                  label="Public business email"
+                  value={b.publicEmail || ""}
+                  onChange={(e) => update({ publicEmail: e.target.value })}
+                />
+                <Input
+                  label="Public business phone"
+                  value={b.publicPhone || ""}
+                  onChange={(e) => update({ publicPhone: e.target.value })}
+                />
+              </div>
               {error && (
                 <p className="error" role="alert">
                   {error}
@@ -349,22 +377,27 @@ export function Onboarding({ step }: { step: string }) {
         {index > 0 && index < 4 && (
           <div className="onboarding-actions">
             <Button variant="ghost" onClick={() => go(index - 1)}>
-              <ArrowLeft size={16} /> Back
+              <ArrowLeft size={16} />{" "}
+              {index === 2 ? "Back to brand identity" : "Back"}
             </Button>
-            <div>
+            <div className="onboarding-actions-end">
               {error && (
                 <p className="error" role="alert">
                   {error}
                 </p>
+              )}
+              {index === 2 && (
+                // Competitor research is optional: skipping completes the step the same way.
+                <Button variant="ghost" onClick={next} disabled={companyBusy}>
+                  Skip for now
+                </Button>
               )}
               <Button onClick={next} disabled={companyBusy}>
                 {
                   [
                     "",
                     "Confirm brand identity",
-                    state.competitorIds.length
-                      ? `Continue with ${state.competitorIds.length} competitors`
-                      : "Skip competitor selection",
+                    "Continue to preferences",
                     "Generate my first post",
                   ][index]
                 }
@@ -378,16 +411,21 @@ export function Onboarding({ step }: { step: string }) {
             <ArrowLeft size={16} /> Back to preferences
           </Button>
         )}
+        {index === 4 && error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
         <p className="onboarding-save-note">
           <Check size={12} /> Company changes save to the server when you
-          continue or save. Mock content stays local.
+          continue or save. Generated posts and media belong to your company.
         </p>
       </main>
       <Modal
         open={help}
         onOpenChange={setHelp}
         title="A little help along the way"
-        description="Company records, website research, competitor research and Gemini content/image generation are real. The competitor and content steps start in a labelled demo mode you can switch off."
+        description="Company records, website research, competitor research and Gemini content/image generation are real. All five steps use real services. Google search suggestions remain display-only."
       >
         <p>
           Continue or Save & Exit to save company data. Use the step navigation
@@ -396,8 +434,8 @@ export function Onboarding({ step }: { step: string }) {
         </p>
         <p>
           Website research retrieves permitted public pages and sends their text
-          to Gemini. Review findings before applying them. Social publishing
-          and analytics are not connected yet.
+          to Gemini. Review findings before applying them. Social publishing and
+          analytics are not connected yet.
         </p>
       </Modal>
       <Modal

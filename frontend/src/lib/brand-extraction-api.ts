@@ -30,9 +30,13 @@ export const analysisSchema = z.object({
   brand_voice: z.array(z.string()),
   brand_keywords: z.array(z.string()),
   brand_colors: z.array(z.string()),
+  suggested_brand_colors: z.array(z.string()).optional(),
   social_links: z.record(z.string(), z.string()),
   city: z.string().nullable(),
   country: z.string().nullable(),
+  state: z.string().nullable().optional(),
+  public_email: z.string().nullable().optional(),
+  public_phone: z.string().nullable().optional(),
   value_proposition: z.string().nullable(),
   content_pillars: z.array(z.string()),
   suggested_content_tone: z.array(z.string()),
@@ -47,7 +51,20 @@ export const resultSchema = z.object({
   extracted_data: analysisSchema,
   source_evidence: z.array(evidenceSchema),
   source_pages: z.array(
-    z.object({ url: z.string(), title: z.string().nullable() }),
+    z.object({
+      url: z.string(),
+      title: z.string().nullable(),
+      logo_candidates: z
+        .array(
+          z.object({
+            url: z.string(),
+            source_url: z.string(),
+            reason: z.string(),
+          }),
+        )
+        .optional(),
+      style_colors: z.array(z.string()).optional(),
+    }),
   ),
   warnings: z.array(z.string()),
   model_identifier: z.string(),

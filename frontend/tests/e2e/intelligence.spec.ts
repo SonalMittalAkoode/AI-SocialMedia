@@ -19,16 +19,23 @@ test("manual competitors persist, approve, reject and survive refresh", async ({
   await expect(
     page.getByRole("heading", { name: "Evidence Business" }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Approve competitor", exact: true })
-    .click();
+  // Review actions live in the card's action menu and the details drawer.
+  const card = page.getByRole("article", { name: "Evidence Business" });
+  await card.getByRole("button", { name: "Actions for Evidence Business" }).click();
+  await page.getByRole("menuitem", { name: "Approve competitor" }).click();
+  await expect(card.getByText("Approved", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText("approved", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "View Evidence Business" }).click();
+  await expect(
+    page.getByRole("article", { name: "Evidence Business" }).getByText("Approved", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "View insights for Evidence Business" }).click();
   await expect(page.getByText(/Research unavailable/)).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Reject", exact: true }).click();
+  await expect(page.getByRole("dialog").getByText("Rejected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close dialog" }).click();
-  await page.getByRole("button", { name: "Reject", exact: true }).click();
-  await expect(page.getByText("rejected", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("article", { name: "Evidence Business" }).getByText("Rejected", { exact: true }),
+  ).toBeVisible();
 });
 
 test("real studio contract restores generated results and saves editable PostgreSQL drafts", async ({

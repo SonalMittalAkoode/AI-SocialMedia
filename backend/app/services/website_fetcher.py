@@ -82,6 +82,13 @@ def origin(url):
     return (u.scheme, u.host, u.port)
 
 
+def canonical_redirect_allowed(initial, target):
+    """Only an exact www alias and/or HTTP->HTTPS upgrade; never a downgrade."""
+    left, right = origin(initial), origin(target)
+    return (left[1].removeprefix("www.") == right[1].removeprefix("www.")
+            and (left[0] == right[0] or (left[0], right[0]) == ("http", "https")))
+
+
 class WebsiteFetcher:
     def __init__(self, client=None):
         self.client = client or httpx.AsyncClient(transport=PublicTransport(), trust_env=False, follow_redirects=False, timeout=limits.request_timeout, headers={"User-Agent": "SocialAIResearchBot/1.0", "Accept": "text/html,application/xhtml+xml", "Accept-Encoding": "identity"})
@@ -89,10 +96,11 @@ class WebsiteFetcher:
     async def close(self):
         await self.client.aclose()
 
-    async def get(self, url, *, allowed_origin=None, robots=False, before_request=None):
+    async def get(self, url, *, allowed_origin=None, robots=False, before_request=None, allow_canonical=False, media=False):
         url = validate_url(url)
+        initial_url = url
         for redirect in range(limits.max_redirects + 1):
-            if allowed_origin and origin(url) != allowed_origin:
+            if allowed_origin and origin(url) != allowed_origin and not (allow_canonical and canonical_redirect_allowed(initial_url, url)):
                 error = ExtractionError("external_redirect", "The website redirected outside the permitted origin. Submit its final public URL instead.")
                 error.redirect_to = url  # already validated; callers decide whether to follow
                 raise error
@@ -115,7 +123,7 @@ class WebsiteFetcher:
                         mime = response.headers.get("content-type", "").split(";")[0].lower()
                         if "noai" in response.headers.get("x-robots-tag", "").lower():
                             raise ExtractionError("restricted", "The website explicitly restricts AI processing.")
-                        if mime not in ({"text/plain", "text/html"} if robots else {"text/html", "application/xhtml+xml"}):
+                        if mime not in ({"image/png","image/jpeg","image/webp","image/svg+xml"} if media else {"text/plain", "text/html"} if robots else {"text/html", "application/xhtml+xml"}):
                             raise ExtractionError("unsupported_content", "The website did not return supported HTML content.")
                         if response.headers.get("content-encoding", "identity").lower() not in {"", "identity"}:
                             raise ExtractionError("unsupported_encoding", "The website ignored the bounded uncompressed response request.")
@@ -124,7 +132,7 @@ class WebsiteFetcher:
                             body.extend(chunk)
                             if len(body) > limits.max_bytes:
                                 raise ExtractionError("body_limit", "The website response exceeded the page size limit.")
-                        return url, body.decode("utf-8", errors="replace"), response.status_code
+                        return (url, (bytes(body),mime), response.status_code) if media else (url, body.decode("utf-8", errors="replace"), response.status_code)
             except (httpx.TimeoutException, asyncio.TimeoutError):
                 raise ExtractionError("website_timeout", "The website took too long to respond.", True) from None
             except httpx.RequestError:

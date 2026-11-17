@@ -17,6 +17,9 @@ export const companySchema = z.object({
   source_social_url: nullable,
   industry: nullable,
   business_type: nullable,
+  state: nullable.optional(),
+  public_email: nullable.optional(),
+  public_phone: nullable.optional(),
   description: nullable,
   city: nullable,
   country: nullable,
@@ -53,6 +56,9 @@ export const preferenceSchema = z.object({
   language: z.string(),
   custom_instructions: nullable,
   excluded_topics: z.array(z.string()),
+  content_topics: z.array(z.string()).optional(),
+  target_audience: nullable.optional(),
+  visual_style: nullable.optional(),
   ...revision,
 });
 export const progressSchema = z.object({
@@ -189,7 +195,7 @@ export const completeStep = (
   request(`/companies/${id}/onboarding/complete-step`, progressSchema, "POST", {
     revision,
     step,
-    demo_acknowledged: step === "competitors" || step === "generate",
+    demo_acknowledged: false,
   });
 export const finishOnboarding = (id: string, revision: number) =>
   request(`/companies/${id}/onboarding/complete`, progressSchema, "POST", {

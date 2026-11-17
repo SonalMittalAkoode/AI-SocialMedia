@@ -35,6 +35,17 @@ def parse_html(url, html):
         except ExtractionError:
             return None
     structured = []
+    logos = []
+    colors = list(dict.fromkeys(re.findall(r"#[0-9a-fA-F]{6}(?![0-9a-fA-F])", " ".join(t.get_text() for t in soup.find_all("style")))))[:8]
+    def add_logo(value, reason):
+        if isinstance(value, dict): value = value.get("url") or value.get("contentUrl")
+        if not isinstance(value, str): return
+        try:
+            target = validate_url(urljoin(url, value))
+            if target not in [r["url"] for r in logos]: logos.append({"url":target,"source_url":url,"reason":reason})
+        except ExtractionError: pass
+    for image in soup.select('header img, img[alt*="logo" i], img[class*="logo" i]')[:20]:
+        add_logo(image.get("src") or image.get("data-src"), "website logo element")
     for script in soup.select('script[type="application/ld+json"]')[:10]:
         if len(script.get_text()) > 20000:
             continue
@@ -47,6 +58,7 @@ def parse_html(url, html):
                 if not isinstance(item, dict) or item.get("@type") not in {"Organization", "LocalBusiness", "Corporation", "ProfessionalService", "Store", "Restaurant"}:
                     continue
                 structured.append({k: clean_text(str(item[k]), 1000) for k in ["name", "description", "address", "telephone", "email", "url", "sameAs"] if k in item})
+                add_logo(item.get("logo"), "structured organization logo")
         except (ValueError, TypeError):
             pass
     social, links, contacts = {}, [], []
@@ -78,4 +90,4 @@ def parse_html(url, html):
     headings = [clean_text(h.get_text(" "), 300) for h in soup.find_all(["h1", "h2", "h3"])[:30]]
     root = soup.find("main") or soup.find("article") or soup.body or soup
     paragraphs = list(dict.fromkeys(clean_text(line, 2000) for line in root.get_text("\n").splitlines() if clean_text(line)))
-    return {"url": url, **metadata, "headings": headings, "cleaned_text": "\n".join(paragraphs)[:12000], "structured_data": structured[:10], "contacts": list(dict.fromkeys(contacts))[:20]}, list(dict.fromkeys(links))[:20], social
+    return {"url": url, **metadata, "headings": headings, "cleaned_text": "\n".join(paragraphs)[:12000], "structured_data": structured[:10], "contacts": list(dict.fromkeys(contacts))[:20], "logo_candidates":logos[:5],"style_colors":colors}, list(dict.fromkeys(links))[:20], social

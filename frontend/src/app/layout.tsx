@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Provider } from "@/store/provider";
 import "./globals.css";
 import "./crm.css";
+import "./competitors.css";
 export const metadata: Metadata = {
   title: "SocialAI — A little intelligence. A lot of impact.",
   description:

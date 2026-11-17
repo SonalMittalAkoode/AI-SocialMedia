@@ -50,6 +50,33 @@ def test_strategy_preferences_claims_and_alignment():
     assert validate_quality(GeneratedContent(posts=[ContentDraft(**draft(caption='Explore Engineering ideas'))]),context,request)
 
 
+def test_certification_failure_gets_actionable_retry_without_echoing_rejected_copy():
+    context={'company_name':'Bakingo','industry':'Bakery','products_services':['Cakes'],'preferences':{}}
+    request={'topic':'cakes','platforms':['Instagram'],'content_type':'image'}
+    rejected=draft(content_type='image',caption='Bakingo certified cakes for your celebrations.')
+    accepted=draft(content_type='image',caption='Celebrate with Bakingo cakes. Message us to explore cake designs.')
+    mock=AsyncMock(side_effect=[SimpleNamespace(text=json.dumps({'posts':[rejected]}),usage_metadata=None),SimpleNamespace(text=json.dumps({'posts':[accepted]}),usage_metadata=None)])
+    client=SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=mock)))
+    result,_=asyncio.run(generate(client,{'context':context,'request':request}))
+    assert mock.await_count==2
+    correction=mock.call_args_list[1].kwargs['contents']
+    assert 'Do not say certified' in correction
+    assert rejected['caption'] not in correction
+    assert result['posts'][0]['caption']==accepted['caption']
+    with pytest.raises(ValueError,match='Unsupported promotional assertion'):
+        validate_quality(GeneratedContent(posts=[ContentDraft(**rejected)]),context,request)
+
+
+def test_confirmed_named_certification_is_allowed_but_an_invented_one_is_not():
+    context={'company_name':'Bakingo','description':'An FSSAI certified bakery.','industry':'Bakery','products_services':['Cakes'],'preferences':{}}
+    request={'topic':'cakes','platforms':['Instagram'],'content_type':'image'}
+    valid=draft(content_type='image',caption='Explore cakes from Bakingo, an FSSAI-certified bakery.')
+    assert validate_quality(GeneratedContent(posts=[ContentDraft(**valid)]),context,request)
+    for caption in ['Bakingo certified cakes for every celebration.','Bakingo offers ISO-certified cakes.']:
+        with pytest.raises(ValueError,match='Unsupported promotional assertion'):
+            validate_quality(GeneratedContent(posts=[ContentDraft(**{**valid,'caption':caption})]),context,request)
+
+
 def test_crud_idempotency_revision_archive_approval(client,setup):
     c,root=setup;body=draft(creation_key=str(uuid4()))
     created=client.post(root+'/posts',json=body);assert created.status_code==201,created.text

@@ -94,6 +94,9 @@ class CompanyFields(Schema):
     description: Text | None = None
     country: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)] | None = None
     city: Annotated[str, StringConstraints(strip_whitespace=True, max_length=150)] | None = None
+    state: Annotated[str, StringConstraints(strip_whitespace=True, max_length=150)] | None = None
+    public_email: Annotated[str, StringConstraints(strip_whitespace=True, max_length=254)] | None = None
+    public_phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)] | None = None
 
     @field_validator("website_url")
     @classmethod
@@ -189,6 +192,9 @@ class ContentPreferencesUpdate(Revision):
     language: Literal["english", "hindi", "hinglish"] = "english"
     custom_instructions: Text | None = None
     excluded_topics: list[Short] = Field(default_factory=list, max_length=30)
+    content_topics: list[Short] = Field(default_factory=list,max_length=30)
+    target_audience: Text|None = None
+    visual_style: Text|None = None
 
     @field_validator("platforms", "content_goals", "tone", "content_formats", "excluded_topics")
     @classmethod

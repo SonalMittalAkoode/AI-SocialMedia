@@ -41,6 +41,8 @@ export function ScheduleForm({
     [ready, setReady] = useState(!!schedule),
     [message, setMessage] = useState("");
   const submitting = useRef(false);
+  const dateEdited = useRef(false);
+  const zoneEdited = useRef(false);
   useEffect(() => {
     if (schedule) return;
     let live = true;
@@ -48,8 +50,9 @@ export function ScheduleForm({
       .then((p) => {
         if (!live) return;
         const tz = p.effective_timezone;
-        setZone(tz);
-        if (!initialDate) setDate(dayInZone(new Date(), tz));
+        if (!zoneEdited.current) setZone(tz);
+        if (!initialDate && !dateEdited.current)
+          setDate(dayInZone(new Date(), tz));
         setReady(true);
       })
       .catch((e) => {
@@ -128,7 +131,10 @@ export function ScheduleForm({
           type="date"
           required
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={(e) => {
+            dateEdited.current = true;
+            setDate(e.target.value);
+          }}
         />
         <Input
           label="Schedule time"
@@ -143,7 +149,10 @@ export function ScheduleForm({
         label="Schedule timezone (IANA)"
         required
         value={zone}
-        onChange={(e) => setZone(e.target.value)}
+        onChange={(e) => {
+          zoneEdited.current = true;
+          setZone(e.target.value);
+        }}
       />
       <Select
         label="Repeated daylight saving time"

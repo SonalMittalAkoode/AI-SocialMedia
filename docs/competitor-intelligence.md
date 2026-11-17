@@ -1,5 +1,61 @@
 # Competitor intelligence
 
+## Workspace UI redesign — 17 November 2026 (latest)
+
+Frontend-only redesign of Competitor Intelligence in the CRM (`/dashboard/competitors`) and onboarding step 3. No backend, API, model, migration, Gemini configuration or `.env` change. Discovery, research, persistence, tenant isolation and grounding compliance are unchanged.
+
+### Structure
+
+- **Header:** "Know your competition. Stay ahead." with subtitle, the active company and industry (from the saved company profile), **Discover competitors ✦** and **Add competitor**.
+- **Summary (CRM only):** Saved, Researched, Approved and Research-in-progress counts, all derived from `GET /competitors` and `GET /ai-jobs?kind=competitor_research`.
+- **Tabs** with real counts: **Discover**, **My Competitors**, **Research Queue**, **Approved Insights**. Onboarding shows only Discover and My Competitors. The default tab is My Competitors when competitors exist, otherwise Discover.
+- **Discover:** the company's industry, location, services and audience as chips, the required information message, and the grounded result.
+- **My Competitors:** a 3/2/1-column card grid or a table. Search, industry, research, verification and approval filters, four sorts, clear filters, bulk selection with **Research selected**. Each card has an initials avatar (no fabricated logos), industry, 3-line description, website, location, relevance score marked *heuristic*, up to 3 research themes plus "+N more", and three distinct status indicators (research / identity / review) with explanatory tooltips. Actions are View insights plus Research website or Reanalyze, and a keyboard-accessible ⋯ menu offering only actions valid for the record's state. Removal asks for confirmation and remains a soft remove.
+- **Details drawer:** right side at 580 px (full screen on mobile). Sections: Overview, Competitive relevance, Key strengths (with the website fact each is based on), Content strategy, Supporting evidence (source links), Research information (with history picker). Findings are labelled **Verified from website**, **AI interpretation** or **Strategic suggestion**. The sticky footer offers Approve / Reject / Reanalyze as applicable.
+- **Research Queue:** real worker jobs with status, stage, requested time and attempts. Retry for failed jobs, View insights for completed ones, Cancel for queued or running ones (existing cancel API). No simulated percentages. It polls only while jobs are active, so progress is restored after refresh.
+- **Approved Insights:** approved competitors, market observations, common themes (with counts across competitors), opportunities (attributed to the competitor whose research produced them) and evidence links, with provenance labels. **Create content with these insights** links to AI Content Studio and does not start a generation. Approved, researched competitors are already part of every new generation's context.
+- **Empty states** use the exact copy specified (watchlist, discovery, research, approval, queue, no matches, discovery failed), with Lucide icons.
+
+### Grounded results presentation (compliance unchanged)
+
+`frontend/src/lib/grounded-markdown.ts` parses headings, numbered and bulleted (nested) lists, bold, italic, code and paragraphs into a data tree rendered with React elements only. HTML in the answer is shown as text, so it is sanitised by construction. Citations are inserted at their original UTF-16 offsets before parsing and render as compact numbered links (`Source N: title`). Top-level list items, which in Gemini answers are usually one per business, are styled as numbered blocks. Their content and order are unchanged; nothing is extracted, ranked, summarised, rewritten or saved. A **Sources (N)** section lists every source. Grounding links are Google redirect URLs, shown as supplied and labelled "via Google Search". Google Search Suggestions keep the same sandboxed iframe. There are still no Save/Approve/Import/Research actions on the result, and nothing is written to storage.
+
+### Onboarding
+
+Step 3 uses the same workspace without metric cards or the Queue and Insights tabs. Its title and description use the new copy. Bottom navigation is **Back to brand identity**, **Skip for now** and **Continue to preferences**. Skip and Continue use the existing step-completion request, so validation, progress and persistence are unchanged and research stays optional.
+
+### Permissions
+
+The client does not know the user's workspace role. Mutations remain owner/admin-only on the server (403 for members), and a permission error appears as a toast.
+
+### Verification
+
+- Live: one real Gemini grounded search through the UI returned 5 competitors with 10 sources. They rendered as numbered sections with inline citations, with no raw Markdown left and no 375 px overflow. Google's 4 suggestion chips rendered in the frame. Screenshots: `frontend/artifacts/competitor-discover-live-desktop.png`, `competitor-discover-live-mobile.png`.
+- Unit: `tests/unit/grounded-markdown.test.ts` (7 tests: blocks, numbering, nesting, emphasis edge cases, HTML as text, citation offsets/merging, citations inside bold). Frontend total **70 passed**.
+- Browser: `tests/e2e/competitor-research.spec.ts` rewritten for the redesign (2 tests): every empty state, Markdown and citations and sources, bulk add, card contents, filters, sort, table view, drawer sections and provenance, approve, confirmed remove and restore, real bulk research reaching a handled failure in the queue with Retry, Approved Insights, 768 and 375 px layouts with a full-screen drawer, and the onboarding layout and Skip.
+- Updated existing tests (interactions moved, assertions kept): `intelligence.spec.ts` approves via the card menu and rejects via the drawer; `grounded-search.spec.ts` uses the discovery-failure "Add competitor" fallback; `journey.spec.ts` and `real-onboarding.spec.ts` click "Continue to preferences".
+- TypeScript, ESLint and the production build pass. The backend suite (288) still passes.
+
+Screenshots: `frontend/artifacts/competitor-discover-desktop.png`, `competitor-intelligence-desktop.png`, `competitor-intelligence-tablet.png`, `competitor-intelligence-mobile.png`, `competitor-drawer-desktop.png`, `competitor-drawer-mobile.png`, `competitor-onboarding-desktop.png`, `competitor-onboarding-mobile.png`.
+
+### Files
+
+New: `frontend/src/components/competitors/{workspace,discover,my-competitors,drawer,queue-and-insights,dialogs,shared}.tsx`, `frontend/src/components/competitors/use-competitor-data.ts`, `frontend/src/lib/grounded-markdown.ts`, `frontend/src/app/competitors.css`, `frontend/tests/unit/grounded-markdown.test.ts`.
+
+Changed: `frontend/src/components/real-competitors.tsx` (now a thin re-export), `frontend/src/components/competitors.tsx` (passes the onboarding variant), `frontend/src/app/dashboard/[section]/page.tsx` (workspace renders its own header), `frontend/src/components/onboarding.tsx` (step 3 copy and navigation), `frontend/src/app/layout.tsx` (stylesheet import), `frontend/tests/e2e/competitor-research.spec.ts`, `intelligence.spec.ts`, `grounded-search.spec.ts`, `journey.spec.ts`, `real-onboarding.spec.ts`.
+
+Removed: `frontend/src/components/grounded-competitors.tsx`, superseded by `competitors/discover.tsx` with the same sandbox and compliance behaviour.
+
+### Limitations
+
+- Filters and sorting apply to the first 100 saved competitors loaded (the API page size). The UI says so when the limit is reached.
+- Competitor logos are not collected, so cards show initials.
+- Content Studio does not show a dedicated "using competitor insights" banner; approved insights are applied automatically to every new generation.
+
+## Phase 7.6 onboarding integration
+
+Real competitor intelligence is now the default in onboarding and the CRM. There is no demo activation toggle, and competitor research can be skipped. Gemini Google Search suggestions remain transient display-only results with citations, supporting links and Google Search Suggestions; they cannot be imported, persisted, crawled or supplied to content generation. Independently sourced manual/bulk competitors continue through separate website research, approval and PostgreSQL persistence. A Brave key is not required for display-only Gemini search. See [real AI onboarding](real-ai-onboarding.md) for live checks and regression evidence.
+
 ## Automated independent research — 17 November 2026 (latest)
 
 This section supersedes the per-competitor-only research described further down. Everything below it remains accurate unless stated here.
@@ -15,7 +71,7 @@ This section supersedes the per-competitor-only research described further down.
 | Durability | Jobs are PostgreSQL rows with leases. A crashed/restarted worker's expired lease is requeued (bounded attempts, per-kind budget `AI_RESEARCH_TIMEOUT`, default 150 s) and a stale worker can never save results. Covered by `test_research_survives_worker_restart_and_completes`. |
 | Richer findings | After the existing evidence-verified website extraction, a second bounded Gemini call (`competitor_analysis.py`) interprets **only verified facts**: market positioning, target audience, content themes, competitive strengths (each must cite an exact verified fact as `basis`; uncited ones are dropped), content opportunities for *your* brand, and an AI fit score. |
 | Partial results | If the assessment fails (quota, timeout, invalid output) the verified website findings are still saved with `assessment_status: "unavailable"` and a warning. |
-| Lenient evidence mode (research only) | Competitor research now omits individual findings that cannot be matched to retrieved text instead of rejecting the whole response (onboarding brand extraction remains strict and unchanged). The strict verifier still runs on what is kept. |
+| Evidence pruning and strict revalidation | Competitor research now omits individual findings that cannot be matched to retrieved text instead of rejecting the whole response. Phase 7.6 also enables this pruning in onboarding extraction, followed by strict revalidation of every retained finding. The strict verifier still runs on what is kept. |
 | Same-domain redirects | A homepage redirect within the same domain (e.g. `https://x.com → https://www.x.com/`) is followed once through the full URL/robots/DNS policy. Cross-domain redirects are refused with a message naming the target domain. |
 | Relevance | `relevance_score = 0.6 × AI fit + 0.4 × term-overlap` when the assessment succeeds, otherwise term-overlap only. The reason string shows both. It is a heuristic, not a probability. |
 | Edit | `PATCH /competitors/{id}` now also accepts `website_url`, `industry`, `description`, `city`, `country`. Changing the website resets verification (earlier research stays in history) and rejects duplicates (409) or your own domain (422). |

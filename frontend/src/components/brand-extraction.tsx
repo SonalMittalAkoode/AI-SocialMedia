@@ -17,10 +17,14 @@ export const findingLabels: Record<api.FindingField, string> = {
   target_audience: "Target audience",
   brand_voice: "Brand personality",
   brand_keywords: "Brand keywords",
-  brand_colors: "Brand colors",
+  brand_colors: "Extracted brand colors",
+  suggested_brand_colors: "Suggested complementary palette",
   social_links: "Social links",
   city: "City",
   country: "Country",
+  state: "State / region",
+  public_email: "Public email",
+  public_phone: "Public phone",
   value_proposition: "Value proposition",
   content_pillars: "Content pillars",
   suggested_content_tone: "Suggested content tone",
@@ -31,9 +35,29 @@ const arrayFields = new Set([
   "brand_voice",
   "brand_keywords",
   "brand_colors",
+  "suggested_brand_colors",
   "content_pillars",
   "suggested_content_tone",
 ]);
+export function hasFinding(value: unknown) {
+  return (
+    value != null &&
+    (Array.isArray(value)
+      ? value.length > 0
+      : typeof value === "object"
+        ? Object.keys(value).length > 0
+        : String(value).trim().length > 0)
+  );
+}
+function findingPreview(value: unknown) {
+  if (!hasFinding(value))
+    return "Not found on the website. Your entered details will be kept.";
+  return Array.isArray(value)
+    ? value.join(" · ")
+    : typeof value === "object"
+      ? Object.values(value as Record<string, string>).join(" · ")
+      : String(value);
+}
 export function parseApproved(
   edits: Partial<Record<api.FindingField, string>>,
   selected: api.FindingField[],
@@ -120,6 +144,9 @@ export function BrandExtraction({
               social_links: saved.brand.social_links,
               city: saved.company.city,
               country: saved.company.country,
+              state: saved.company.state,
+              public_email: saved.company.public_email,
+              public_phone: saved.company.public_phone,
             });
             setResult(loaded);
             setEdits(
@@ -192,12 +219,12 @@ export function BrandExtraction({
       setBusy(false);
     }
   }
-  async function apply() {
+  async function apply(fields = selected) {
     if (!job) return;
     setBusy(true);
     setError("");
     try {
-      await approveExtraction(job.id, parseApproved(edits, selected));
+      await approveExtraction(job.id, parseApproved(edits, fields));
       setApplied(true);
       toast(
         "Selected findings applied. Review the brand and confirm it when ready.",
@@ -214,6 +241,11 @@ export function BrandExtraction({
     }
   }
   const running = job?.status === "queued" || job?.status === "running";
+  const availableFields = result
+    ? (Object.keys(findingLabels) as api.FindingField[]).filter((field) =>
+        hasFinding(result.extracted_data[field]),
+      )
+    : [];
   return (
     <section className="panel" aria-label="Website brand research">
       <h3>Research your public website</h3>
@@ -259,7 +291,7 @@ export function BrandExtraction({
         </div>
       )}
       {result && (
-        <div>
+        <div className="extraction-review">
           <h3>
             {applied
               ? "Applied successfully"
@@ -267,10 +299,30 @@ export function BrandExtraction({
           </h3>
           <p>
             Confidence: {result.extracted_data.overall_confidence} (a
-            heuristic). Compare each finding with your saved brand. Nothing is
-            selected automatically. Lists use one item per line; social links
-            use a JSON object. Recommendations append to Content guidelines.
+            heuristic). Analysis succeeded. Review the values below. Open a row
+            to edit it or inspect its sources. Missing findings do not replace
+            details you entered. Recommendations append to Content guidelines.
           </p>
+          {onApplied && (
+            <div className="wrap-actions">
+              <Button
+                disabled={!availableFields.length || busy || companyBusy}
+                onClick={() => void apply(availableFields)}
+              >
+                {busy ? "Saving findings…" : "Use these findings and continue"}
+              </Button>
+              <p className="muted">
+                This saves all available findings and opens Brand identity. To
+                apply only some, select them below.
+              </p>
+            </div>
+          )}
+          <Button
+            variant="secondary"
+            onClick={() => setSelected(availableFields)}
+          >
+            Select all available findings
+          </Button>
           {result.warnings.map((warning, i) => (
             <p className="notice" key={i}>
               {warning}
@@ -279,18 +331,12 @@ export function BrandExtraction({
           {Object.entries(findingLabels).map(([key, label]) => {
             const field = key as api.FindingField,
               value = result.extracted_data[field];
-            const available =
-              value !== null &&
-              value !== "" &&
-              (!Array.isArray(value) || value.length > 0) &&
-              (typeof value !== "object" ||
-                Array.isArray(value) ||
-                Object.keys(value).length > 0);
+            const available = hasFinding(value);
             const evidence = result.source_evidence.filter(
               (e) => e.field === field,
             );
             return (
-              <details key={field}>
+              <details key={field} className="extraction-finding">
                 <summary>
                   {label} ·{" "}
                   {available
@@ -302,6 +348,9 @@ export function BrandExtraction({
                   JSON.stringify(value) !== JSON.stringify(existing[field])
                     ? " · differs from current profile"
                     : ""}
+                  <span className="finding-preview">
+                    {findingPreview(value)}
+                  </span>
                 </summary>
                 <p className="muted" style={{ overflowWrap: "anywhere" }}>
                   Current:{" "}
@@ -359,12 +408,14 @@ export function BrandExtraction({
               </details>
             );
           })}
-          <Button
-            disabled={!selected.length || busy || companyBusy}
-            onClick={() => void apply()}
-          >
-            Apply selected findings
-          </Button>
+          <div className="wrap-actions">
+            <Button
+              disabled={!selected.length || busy || companyBusy}
+              onClick={() => void apply()}
+            >
+              Apply selected findings
+            </Button>
+          </div>
           <Button
             variant="ghost"
             disabled={busy || companyBusy || running}

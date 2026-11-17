@@ -1,5 +1,33 @@
 import { test, expect } from "@playwright/test";
-import { uniqueEmail, signInWorkspace } from "./auth-helpers";
+import { uniqueEmail, signInWorkspace, apiURL } from "./auth-helpers";
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+import { addDays, dayInZone } from "../../src/lib/scheduling-api";
+async function mockRealGeneration(page: import("@playwright/test").Page) {
+  await page.route("**/content-generations", async (route) => {
+    const user = await (await page.request.get(`${apiURL}/auth/me`)).json();
+    const spaces = await (
+      await page.request.get(`${apiURL}/workspaces`)
+    ).json();
+    const companies = await (
+      await page.request.get(`${apiURL}/workspaces/${spaces[0].id}/companies`)
+    ).json();
+    const backend = path.resolve(process.cwd(), "../backend");
+    const seeded = JSON.parse(
+      execFileSync(
+        path.join(backend, ".venv/Scripts/python.exe"),
+        ["scripts/seed_crm_browser_generation.py", companies[0].id, user.id],
+        { cwd: backend, encoding: "utf8" },
+      ),
+    );
+    const job = await (
+      await page.request.get(
+        `${apiURL}/companies/${companies[0].id}/ai-jobs/${seeded.job_id}`,
+      )
+    ).json();
+    await route.fulfill({ status: 202, json: job });
+  });
+}
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-11-11T04:30:00Z"));
 });
@@ -46,15 +74,17 @@ test("complete onboarding, persist an edited draft, schedule, and return after l
   await page.getByRole("button", { name: "Confirm brand identity" }).click();
   await expect(page).toHaveURL(/onboarding\/competitors/);
   await page
-    .getByRole("button", { name: /Continue with .* competitors/ })
+    .getByRole("button", { name: "Continue to preferences" })
     .click();
   await expect(page).toHaveURL(/onboarding\/preferences/);
   await page
     .getByRole("button", { name: "Generate my first post", exact: true })
     .click();
   await expect(page).toHaveURL(/onboarding\/generate/);
+  await mockRealGeneration(page);
+  await page.getByLabel("What's the story?").fill("Our team and community");
   await page
-    .getByRole("button", { name: "Generate my first posts", exact: true })
+    .getByRole("button", { name: "Generate content", exact: true })
     .click();
   await expect(page.getByLabel("Caption", { exact: true })).toBeVisible();
   await page
@@ -62,38 +92,42 @@ test("complete onboarding, persist an edited draft, schedule, and return after l
     .fill("A morning worth sharing");
   await page
     .getByLabel("Caption", { exact: true })
-    .fill("Fresh coffee. A fresh start. Welcome to Sam’s Cafe.");
+    .fill("Fresh coffee and a thoughtful team. Welcome to our cafe.");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await page
-    .getByRole("button", { name: "Save as draft", exact: true })
+    .getByRole("button", { name: "Complete onboarding", exact: true })
     .click();
-  await page.getByRole("button", { name: "Complete onboarding" }).click();
   await page.getByRole("link", { name: "Go to dashboard" }).click();
   await expect(page).toHaveURL("/dashboard");
-  await expect(
-    page.getByRole("heading", { name: /Workspace overview/ }),
-  ).toBeVisible();
   await page.goto("/dashboard/posts");
-  await page.getByRole("button", { name: "View browser demo drafts" }).click();
   await page
-    .getByRole("button", { name: "Preview A morning worth sharing" })
+    .getByRole("button", { name: "Edit A morning worth sharing", exact: true })
     .click();
   await page.getByLabel("Post title", { exact: true }).fill("Our next chapter");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await page.reload();
-  await page.getByRole("button", { name: "View browser demo drafts" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Our next chapter" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Preview Our next chapter" }).click();
-  await page.getByLabel(/Planned date & time/).fill("2026-11-18T09:30");
-  await page.getByRole("button", { name: "Plan locally", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Post planned locally");
-  await page.goto("/dashboard/calendar");
+  await expect(page.getByText("Changes saved", { exact: true })).toBeVisible();
   await page
-    .getByRole("button", { name: "View demo calendar", exact: true })
+    .getByRole("button", { name: "Approve saved draft", exact: true })
+    .click();
+  await page
+    .getByLabel("Schedule date", { exact: true })
+    .fill(addDays(dayInZone(new Date(), "Asia/Kolkata"), 14));
+  await page
+    .getByRole("button", { name: "Confirm schedule", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: /Instagram.*Our next chapter/ }),
+    page.getByText("Post scheduled in your company calendar.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Edit Our next chapter", exact: true }),
+  ).toBeVisible();
+  await page.goto("/dashboard/calendar");
+  await expect(
+    page.getByRole("button", { name: /View schedule Our next chapter/ }),
   ).toBeVisible();
   for (const route of [
     "competitors",
@@ -117,9 +151,8 @@ test("complete onboarding, persist an edited draft, schedule, and return after l
   await page.getByRole("button", { name: "Log in to your workspace" }).click();
   await expect(page).toHaveURL("/dashboard");
   await page.goto("/dashboard/posts");
-  await page.getByRole("button", { name: "View browser demo drafts" }).click();
   await expect(
-    page.getByRole("heading", { name: "Our next chapter" }),
+    page.getByRole("button", { name: "Edit Our next chapter" }),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -150,6 +183,7 @@ test("responsive demo screens have no horizontal overflow", async ({
         await page.evaluate(
           () => document.documentElement.scrollWidth <= window.innerWidth,
         ),
+        `${path} at ${width}px`,
       ).toBe(true);
     }
     await page.goto("/dashboard");
@@ -163,24 +197,37 @@ test("responsive demo screens have no horizontal overflow", async ({
   await page.goto("/");
   await page.screenshot({ path: "artifacts/landing.png", fullPage: true });
 });
-test("simulated generation can fail and retry without losing configuration", async ({
+test("real generation failure preserves configuration and allows explicit retry", async ({
   page,
 }) => {
   await signInWorkspace(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Explore the dashboard" }).click();
+  await mockRealGeneration(page);
+  await page.route("**/content-generations", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { detail: "Gemini temporarily unavailable. No template fallback." },
+    }),
+  );
   await page.goto("/dashboard/content-studio");
-  await page.getByRole("button", { name: "Use demo templates" }).click();
-  await page.getByLabel(/What.*the story/).fill("Our winter menu");
-  await page.getByLabel("Test a simulated error").check();
-  await page.getByRole("button", { name: "Generate my first posts" }).click();
+  await page.getByLabel("What's the story?").fill("Our winter menu");
+  await page
+    .getByRole("button", { name: "Generate content", exact: true })
+    .click();
   await expect(
     page
       .getByRole("alert")
-      .filter({ hasText: "The demo generation was interrupted" }),
-  ).toContainText("Please try again");
-  await page.getByRole("button", { name: "Try again", exact: true }).click();
-  await expect(page.getByLabel("Post title", { exact: true })).toHaveValue(
+      .filter({ hasText: "Gemini temporarily unavailable" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("What's the story?")).toHaveValue(
     "Our winter menu",
+  );
+  await expect(page.getByLabel("Test a simulated error")).toHaveCount(0);
+  await page.unroute("**/content-generations");
+  await mockRealGeneration(page);
+  await page
+    .getByRole("button", { name: "Generate content", exact: true })
+    .click();
+  await expect(page.getByLabel("Post title", { exact: true })).toHaveValue(
+    "CRM browser recovery fixture",
   );
 });

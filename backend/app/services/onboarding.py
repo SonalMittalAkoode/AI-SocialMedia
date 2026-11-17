@@ -185,8 +185,12 @@ def validate_step(company, step, demo_acknowledged=False):
         raise HTTPException(422, "Save the company name first")
     if step == "brand" and not company.brand.is_confirmed:
         raise HTTPException(422, "Confirm the saved brand profile first")
-    if step in {"competitors", "generate"} and not demo_acknowledged:
-        raise HTTPException(422, "Acknowledge this is a demo step; no AI research or generation job is recorded")
+    if step == "generate" and not demo_acknowledged:
+        from sqlalchemy.orm import object_session
+        from app.models.content import Post
+        db=object_session(company)
+        if not db.scalar(select(Post.id).where(Post.company_id==company.id,Post.generation_job_id.is_not(None)).limit(1)):
+            raise HTTPException(422,"Save a real generated post before completing onboarding")
     if step == "preferences":
         prefs = company.preferences
         if not all([prefs.platforms, prefs.content_goals, prefs.tone, prefs.content_formats]):
@@ -203,7 +207,7 @@ def complete_step(db, company, data):
     with transaction(db):
         if data.step not in progress.completed_steps:
             progress.completed_steps = progress.completed_steps + [data.step]
-        if data.step in {"competitors", "generate"} and data.step not in progress.demo_steps:
+        if data.demo_acknowledged and data.step in {"competitors", "generate"} and data.step not in progress.demo_steps:
             progress.demo_steps = progress.demo_steps + [data.step]
         progress.current_step = STEPS[min(index + 1, 4)]
     return progress
@@ -212,13 +216,13 @@ def complete_step(db, company, data):
 def complete(db, company, data):
     progress = company.onboarding
     check_revision(progress, data.revision)
-    if progress.completed_steps != STEPS or set(progress.demo_steps) != {"competitors", "generate"}:
-        raise HTTPException(422, "Finish all required steps and acknowledge the demo stages first")
+    if progress.completed_steps != STEPS:
+        raise HTTPException(422, "Finish all required steps first")
     for step in STEPS:
-        validate_step(company, step, True)
+        validate_step(company, step, step in progress.demo_steps)
     with transaction(db):
         progress.status = "completed"
-        progress.demo_completed = True
+        progress.demo_completed = bool(progress.demo_steps)
         progress.completed_at = datetime.now(timezone.utc)
         progress.current_step = "generate"
         company.status = "active"

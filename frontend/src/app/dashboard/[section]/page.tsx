@@ -63,16 +63,8 @@ export default async function Page({
         />
       );
     case "competitors":
-      return (
-        <>
-          <PageHeading
-            eyebrow="MARKET RESEARCH"
-            title="Competitor Intelligence"
-            description="Research and review company competitors using saved evidence and real analysis."
-          />
-          <Competitors />
-        </>
-      );
+      // The workspace renders its own page header and company context.
+      return <Competitors />;
     case "calendar":
       return (
         <Calendar

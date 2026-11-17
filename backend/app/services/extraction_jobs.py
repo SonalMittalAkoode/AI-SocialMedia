@@ -90,7 +90,7 @@ def succeed(db, job_id, token, analysis, website, usage, model, duration):
         return False
     if not db.scalar(select(Result.id).where(Result.job_id == job.id)):
         data = analysis.model_dump(mode="json")
-        db.add(Result(job_id=job.id, company_id=job.company_id, extracted_data=data, source_evidence=data["field_evidence"], source_pages=[{"url": p["url"], "title": p["title"]} for p in website["pages"]], warnings=(website["warnings"] + data["warnings"])[:25], token_usage=usage, model_identifier=model))
+        db.add(Result(job_id=job.id, company_id=job.company_id, extracted_data=data, source_evidence=data["field_evidence"], source_pages=[{"url": p["url"], "title": p["title"], "logo_candidates":p.get("logo_candidates",[]),"style_colors":p.get("style_colors",[])} for p in website["pages"]], warnings=(website["warnings"] + data["warnings"])[:25], token_usage=usage, model_identifier=model))
     job.status = job.stage = "completed"
     job.completed_at = now()
     job.lease_token = job.lease_expires_at = None

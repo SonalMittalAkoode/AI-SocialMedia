@@ -16,6 +16,13 @@ export interface CompanyProfile {
   name: string;
   website: string;
   industry: string;
+  businessType?: string;
+  state?: string;
+  city?: string;
+  country?: string;
+  publicEmail?: string;
+  publicPhone?: string;
+  keywords?: string;
   description: string;
   location: string;
   audience: string;
@@ -40,6 +47,10 @@ export interface Competitor {
   color: string;
 }
 export interface ContentPreferences {
+  targetAudience?: string;
+  topics?: string;
+  excludedTopics?: string;
+  visualStyle?: string;
   platforms: SocialPlatform[];
   goals: string[];
   tones: string[];

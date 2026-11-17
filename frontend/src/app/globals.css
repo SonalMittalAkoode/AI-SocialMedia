@@ -299,6 +299,14 @@ button:disabled:focus-visible {
   gap: 9px;
   flex-wrap: wrap;
 }
+.draft-recovery-notice {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.draft-recovery-notice > span {
+  flex: 1 1 200px;
+  min-width: 0;
+}
 .text-button {
   display: inline-flex;
   align-items: center;
@@ -325,6 +333,7 @@ button:disabled:focus-visible {
 .field {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 8px;
   margin-bottom: 19px;
   font-size: 12px;
@@ -338,14 +347,24 @@ button:disabled:focus-visible {
 .field select {
   width: 100%;
 }
+.field input,
+.field textarea {
+  min-width: 0;
+  width: 100%;
+}
 .field-hint {
   font-size: 10px;
   color: #83838c;
   margin: -10px 0 23px;
 }
+.extraction-review { margin-top: 20px; }
+.extraction-review > .wrap-actions { margin: 16px 0; }
+.extraction-finding { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.extraction-finding summary { cursor: pointer; font-size: 12px; overflow-wrap: anywhere; }
+.finding-preview { display: block; color: var(--muted); font-weight: normal; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0 18px;
 }
 .check-label {
@@ -1980,6 +1999,7 @@ button:disabled:focus-visible {
 .color-pickers {
   display: flex;
   gap: 18px;
+  flex-wrap: wrap;
 }
 .color-pickers > label {
   display: flex;
@@ -1990,6 +2010,17 @@ button:disabled:focus-visible {
 }
 .color-pickers input {
   border-radius: 6px;
+}
+.color-pickers input:not([type="color"]) {
+  width: 104px;
+  flex: 0 0 104px;
+  min-width: 0;
+  height: 34px;
+}
+.color-pickers input[type="color"] {
+  width: 42px;
+  flex: 0 0 42px;
+  height: 34px;
 }
 .preference-section {
   margin-bottom: 30px;
@@ -2742,6 +2773,11 @@ button:disabled:focus-visible {
 }
 .section-title h3 {
   font-size: 15px;
+}
+.section-title h2 {
+  font-size: 18px;
+  line-height: 1.4;
+  letter-spacing: normal;
 }
 .studio-config > .button-primary {
   width: 100%;

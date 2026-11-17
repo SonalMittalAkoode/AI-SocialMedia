@@ -17,21 +17,9 @@ export function Posts(props: {
   initialMedia?: string;
 }) {
   const { companyId } = useStore();
-  const [demo, setDemo] = useState(false);
-  return (
-    <>
-      <Button variant="ghost" onClick={() => setDemo((v) => !v)}>
-        {demo ? "View saved company posts" : "View browser demo drafts"}
-      </Button>
-      {demo ? (
-        <DemoPosts {...props} />
-      ) : (
-        <PostLibrary key={companyId} {...props} />
-      )}
-    </>
-  );
+  return <PostLibrary key={companyId} {...props} />;
 }
-function DemoPosts({
+export function DemoPosts({
   initialQuery = "",
   initialEdit = null,
 }: {

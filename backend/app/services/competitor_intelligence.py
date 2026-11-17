@@ -19,7 +19,7 @@ def brand_context(company, require_confirmed=True):
             "brand_voice":b.brand_voice, "brand_keywords":b.brand_keywords, "brand_colors":b.brand_colors,
             "guidelines":b.content_guidelines, "city":company.city,"country":company.country,"website_url":company.website_url,
             "brand_revision":b.revision,"company_revision":company.revision,
-            "preferences":{"platforms":p.platforms,"goals":p.content_goals,"tones":p.tone,"formats":p.content_formats,"language":p.language,"excluded_topics":p.excluded_topics,"instructions":p.custom_instructions}}
+            "preferences":{"platforms":p.platforms,"goals":p.content_goals,"tones":p.tone,"formats":p.content_formats,"language":p.language,"excluded_topics":p.excluded_topics,"instructions":p.custom_instructions,"audience":p.target_audience,"topics":p.content_topics,"visual_style":p.visual_style}}
 
 
 def tokens(value):

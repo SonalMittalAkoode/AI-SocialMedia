@@ -111,7 +111,7 @@ export function Settings() {
       <PageHeading
         eyebrow="WORKSPACE ADMINISTRATION"
         title="Workspace Settings"
-        description="Manage workspace preferences, your session and explicitly local display or demo settings."
+        description="Manage workspace preferences, your session and local display settings."
       />
       <div className="settings-grid">
         <section className="panel">
@@ -235,14 +235,14 @@ export function Settings() {
           </Button>
         </section>
         <section className="panel">
-          <h3>Browser demo data</h3>
+          <h3>Browser-only drafts</h3>
           <p>
-            Resetting clears this company&apos;s local demo posts and
+            Resetting clears this company&apos;s local preview posts and
             competitors. Your saved company, brand, preferences, and account
             remain available.
           </p>
           <Button variant="danger" onClick={() => setConfirm(true)}>
-            Reset demo data
+            Clear browser-only drafts
           </Button>
         </section>
         <section className="panel">
@@ -266,7 +266,7 @@ export function Settings() {
         open={confirm}
         onOpenChange={setConfirm}
         title="Start with a clean canvas?"
-        description="This company's local demo posts and competitors will be reset. This cannot be undone."
+        description="This company's local preview posts and competitors will be reset. This cannot be undone."
       >
         <div className="wrap-actions">
           <Button variant="secondary" onClick={() => setConfirm(false)}>
@@ -279,7 +279,7 @@ export function Settings() {
               router.push("/");
             }}
           >
-            Reset all demo data
+            Clear local preview data
           </Button>
         </div>
       </Modal>

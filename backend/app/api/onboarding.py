@@ -117,6 +117,13 @@ def navigate(company_id: UUID, data: OnboardingStepUpdate, user: User = Depends(
     return service.navigate(db, company_access(db, user, company_id, True), data)
 
 
+@router.get("/companies/{company_id}/onboarding/readiness")
+def readiness(company_id:UUID,user:User=Depends(current_user),db:Session=Depends(storage)):
+    from app.models.content import Post
+    company_access(db,user,company_id)
+    return {"has_generated_post":db.scalar(select(Post.id).where(Post.company_id==company_id,Post.generation_job_id.is_not(None)).limit(1)) is not None}
+
+
 @router.post("/companies/{company_id}/onboarding/complete-step", response_model=OnboardingProgressResponse)
 def complete_step(company_id: UUID, data: OnboardingCompleteStepRequest, user: User = Depends(current_user), db: Session = Depends(storage)):
     return service.complete_step(db, company_access(db, user, company_id, True), data)

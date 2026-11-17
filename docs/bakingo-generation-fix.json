@@ -1,0 +1,27 @@
+{
+  "text_model": "gemini-2.5-flash",
+  "brand": "Bakingo",
+  "topic": "cakes",
+  "platforms": [
+    "Instagram",
+    "LinkedIn"
+  ],
+  "text_status": "completed",
+  "images": [
+    {
+      "mime_type": "image/png",
+      "size_bytes": 1264070,
+      "width": 928,
+      "height": 1152,
+      "result_index": 0
+    },
+    {
+      "mime_type": "image/png",
+      "size_bytes": 998858,
+      "width": 1024,
+      "height": 1024,
+      "result_index": 1
+    }
+  ],
+  "regression_backend_passed": 47
+}

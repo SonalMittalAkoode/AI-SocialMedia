@@ -57,6 +57,7 @@ export function emptyCompanyState(base: DemoState): DemoState {
     services: "",
     socialLinks: "",
     guidelines: "",
+    identity: { tones: [], colors: [], logo: "" },
   };
   return {
     ...base,
@@ -82,6 +83,13 @@ export function applyBundle(
         name: b.display_name || c.name,
         website: c.website_url || c.source_social_url || "",
         industry: c.industry || "",
+        businessType: c.business_type || "",
+        state: c.state || "",
+        city: c.city || "",
+        country: c.country || "",
+        publicEmail: c.public_email || "",
+        publicPhone: c.public_phone || "",
+        keywords: (b.brand_keywords || []).join(", "),
         description: b.description || c.description || "",
         location: [c.city, c.country].filter(Boolean).join(", "),
         audience: b.target_audience || "",
@@ -90,14 +98,16 @@ export function applyBundle(
         guidelines: b.content_guidelines || "",
         identity: {
           tones: b.brand_voice,
-          colors: b.brand_colors.length
-            ? b.brand_colors
-            : initialState().workspace.company.identity.colors,
+          colors: b.brand_colors,
           logo: b.logo_url || "",
         },
       },
     },
     preferences: {
+      targetAudience: p.target_audience || "",
+      topics: (p.content_topics || []).join(", "),
+      excludedTopics: p.excluded_topics.join(", "),
+      visualStyle: p.visual_style || "",
       platforms: p.platforms.length
         ? p.platforms.map((v) => platformLabels[v])
         : initial
@@ -143,9 +153,13 @@ export function companyPayload(state: DemoState) {
     website_url: social ? null : text(b.website),
     source_social_url: social ? text(b.website) : null,
     industry: text(b.industry),
+    business_type: text(b.businessType || ""),
+    state: text(b.state || ""),
+    public_email: text(b.publicEmail || ""),
+    public_phone: text(b.publicPhone || ""),
     description: text(b.description),
-    city: text(location[0] || ""),
-    country: text(location.slice(1).join(", ")),
+    city: text(b.city ?? location[0] ?? ""),
+    country: text(b.country ?? location.slice(1).join(", ")),
   };
 }
 export function brandPayload(state: DemoState) {
@@ -174,6 +188,10 @@ export function brandPayload(state: DemoState) {
     description: text(b.description),
     brand_colors: b.identity.colors,
     brand_voice: b.identity.tones,
+    brand_keywords: (b.keywords || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean),
     target_audience: text(b.audience),
     products_services: b.services
       .split(",")
@@ -195,5 +213,15 @@ export function preferencePayload(state: DemoState) {
     custom_posts_per_week: p.frequency === "Custom" ? p.customFrequency : null,
     language: lookup(languageLabels, p.language),
     custom_instructions: text(p.instructions),
+    target_audience: text(p.targetAudience || ""),
+    content_topics: (p.topics || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean),
+    excluded_topics: (p.excludedTopics || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean),
+    visual_style: text(p.visualStyle || ""),
   };
 }

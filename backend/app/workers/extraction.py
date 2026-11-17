@@ -35,7 +35,7 @@ async def run_job(claimed, analyzer, session_factory=SessionLocal, extractor=ext
         async with asyncio.timeout(remaining):
             website = await extractor(url, stage=stage)
             stage("analyzing")
-            result, usage = await analyzer.analyze(website, compact=compact)
+            result, usage = await analyzer.analyze(website, compact=compact, lenient=True)
             stage("saving")
             with session_factory() as db:
                 jobs.succeed(db, job_id, token, result, website, usage, settings.GEMINI_MODEL, elapsed_ms + int((time.monotonic() - started) * 1000))

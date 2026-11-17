@@ -46,6 +46,8 @@ def image_brief(context, draft, aspect_ratio, instructions=""):
         f"Brand: {context.get('company_name')}. Industry: {context.get('industry') or 'not specified'}.",
         f"Offerings to evoke: {', '.join(services) or 'the brand offering'}.",
         f"Audience: {audience or 'the brand audience'}.",
+        f"Visual style preference: {(context.get('preferences') or {}).get('visual_style') or 'not specified'}.",
+        f"Content guidelines: {context.get('guidelines') or 'not specified'}.",
         f"Mood from brand voice: {voice or 'professional, clear'}." + (f" Keywords: {keywords}." if keywords else ""),
         (f"Use this exact brand palette prominently: {', '.join(colors)}." if colors else "Use a cohesive, modern palette."),
         f"Post topic: {draft.get('title')}.",

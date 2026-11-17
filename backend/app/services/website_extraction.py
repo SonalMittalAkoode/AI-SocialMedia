@@ -20,7 +20,7 @@ async def extract_website(url, stage=lambda _: None, fetcher=None):
         if key not in robots_cache:
             u = urlsplit(target)
             robots_url = f"{u.scheme}://{u.netloc}/robots.txt"
-            _, text, code = await fetcher.get(robots_url, allowed_origin=key, robots=True)
+            _, text, code = await fetcher.get(robots_url, allowed_origin=key, robots=True, allow_canonical=True)
             parser = RobotFileParser()
             parser.parse(text.splitlines() if code == 200 else [])
             robots_cache[key] = parser
@@ -51,9 +51,11 @@ async def extract_website(url, stage=lambda _: None, fetcher=None):
                 continue
             visited.add(target)
             try:
-                # Strict same origin redirects for crawl pages. Homepage upgrades
-                # are intentionally fail-closed; submit the final canonical URL.
-                resolved, html, _ = await fetcher.get(target, allowed_origin=canonical_origin, before_request=permitted)
+                # Only the homepage may adopt a validated www alias/HTTPS upgrade.
+                # Every subsequent crawl page remains on that canonical origin.
+                resolved, html, _ = await fetcher.get(target, allowed_origin=canonical_origin, before_request=permitted, allow_canonical=not pages)
+                if not pages:
+                    canonical_origin = origin(resolved)
                 stage("cleaning")
                 page, links, found_social = parse_html(resolved, html)
                 page["social_links"] = found_social

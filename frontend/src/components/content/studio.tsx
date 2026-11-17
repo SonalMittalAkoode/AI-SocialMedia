@@ -17,17 +17,9 @@ export function Studio(props: {
   onComplete?: () => void;
 }) {
   const { companyId } = useStore();
-  const [demo, setDemo] = useState(!!props.onboarding);
-  return (
-    <>
-      <Button variant="ghost" onClick={() => setDemo((v) => !v)}>
-        {demo ? "Use real Gemini generation" : "Use demo templates"}
-      </Button>
-      {demo ? <DemoStudio {...props} /> : <RealStudio key={companyId} />}
-    </>
-  );
+  return <RealStudio key={companyId} {...props} />;
 }
-function DemoStudio({
+export function DemoStudio({
   onboarding = false,
   onComplete,
 }: {

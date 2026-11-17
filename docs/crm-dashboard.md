@@ -61,6 +61,19 @@ Both remain read-only GETs, company-scoped (404 for non-members) and bounded. No
 New: `backend/tests/test_crm_dashboard_stats.py`, `frontend/tests/e2e/crm-dashboard.spec.ts`.
 Changed: `backend/app/services/crm.py`, `backend/app/schemas/crm.py`, `backend/app/api/crm.py`, `frontend/src/components/dashboard/shell.tsx`, `frontend/src/components/dashboard/crm-overview.tsx`, `frontend/src/components/dashboard/companies.tsx`, `frontend/src/components/dashboard/posts.tsx`, `frontend/src/components/content/post-library.tsx`, `frontend/src/lib/crm-api.ts`, `frontend/src/app/dashboard/[section]/page.tsx`, `frontend/src/app/crm.css`, `frontend/tests/e2e/journey.spec.ts`, `frontend/tests/e2e/crm.spec.ts`.
 
+### Final regression (17 Nov 2026, end of Phases 1–4)
+
+| Check | Result |
+| --- | --- |
+| Backend suite | **270 passed** |
+| Frontend unit | **60 passed** |
+| TypeScript, ESLint | Passed |
+| Production build (`next build`) | Passed |
+| Alembic | Head `e8f3c2a61b45`; `alembic check` reports no pending operations |
+| Complete browser suite (32 tests, one run) | **31 passed, 1 failed**: the live shared-worker scheduling wait timed out during an unusually slow 1.6 h run. The worker was verified alive and processing due schedules, and `scheduling.spec.ts` then **passed 3/3** in a focused recheck with no code change. This is not one uninterrupted all-green run. |
+| Data preservation | All **3,309** baseline rows present; every pre-existing column value byte-identical (re-hashed over original columns). 620 additional rows belong to labelled e2e/smoke test accounts. |
+| Environment files | `backend/.env` and root `.env` hashes unchanged |
+
 ### Still honest-unavailable
 
 Social Accounts and Analytics keep their explicit "not connected" states. OAuth, publishing and engagement analytics remain Phase 8.

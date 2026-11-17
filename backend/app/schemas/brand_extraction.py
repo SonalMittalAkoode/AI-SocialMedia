@@ -10,7 +10,7 @@ from app.services.extraction_errors import ExtractionError
 Small = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 Detail = Annotated[str, StringConstraints(strip_whitespace=True, max_length=3000)]
 Confidence = Literal["high", "medium", "low"]
-FieldName = Literal["company_name", "industry", "business_type", "description", "tagline", "target_audience", "products_services", "brand_voice", "brand_keywords", "brand_colors", "social_links", "city", "country", "value_proposition", "content_pillars", "suggested_content_tone"]
+FieldName = Literal["company_name", "industry", "business_type", "description", "tagline", "target_audience", "products_services", "brand_voice", "brand_keywords", "brand_colors", "suggested_brand_colors", "social_links", "city", "state", "country", "public_email", "public_phone", "value_proposition", "content_pillars", "suggested_content_tone"]
 
 
 class Evidence(Schema):
@@ -33,9 +33,13 @@ class BrandAnalysis(Schema):
     brand_voice: list[Small] = Field(default_factory=list, max_length=10)
     brand_keywords: list[Small] = Field(default_factory=list, max_length=30)
     brand_colors: list[Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]] = Field(default_factory=list, max_length=8)
+    suggested_brand_colors: list[Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]] = Field(default_factory=list,max_length=8)
     social_links: dict[Literal["instagram", "facebook", "linkedin", "x"], str] = Field(default_factory=dict)
     city: Small | None = None
     country: Small | None = None
+    state: Small | None = None
+    public_email: Annotated[str, StringConstraints(max_length=254)] | None = None
+    public_phone: Small | None = None
     value_proposition: Detail | None = None
     content_pillars: list[Small] = Field(default_factory=list, max_length=10)
     suggested_content_tone: list[Small] = Field(default_factory=list, max_length=10)
@@ -93,7 +97,7 @@ class ResultResponse(Schema):
 class ApplyFindings(Schema):
     company_revision: int = Field(ge=1)
     brand_revision: int = Field(ge=1)
-    fields: dict[FieldName, str | list[str] | dict[str, str] | None] = Field(min_length=1, max_length=16)
+    fields: dict[FieldName, str | list[str] | dict[str, str] | None] = Field(min_length=1, max_length=24)
 
 
 def adapt_approved(data: ApplyFindings, existing_guidelines=""):
@@ -103,13 +107,15 @@ def adapt_approved(data: ApplyFindings, existing_guidelines=""):
         if key == "company_name":
             company["name"] = value
             brand["display_name"] = value
-        elif key in {"industry", "business_type", "city", "country"}:
+        elif key in {"industry", "business_type", "city", "state", "country", "public_email", "public_phone"}:
             company[key] = value
         elif key == "description":
             company[key] = value
             brand[key] = value
         elif key == "products_services":
             brand["products_services"] = value
+        elif key == "suggested_brand_colors":
+            brand["brand_colors"] = list(dict.fromkeys(brand.get("brand_colors",[])+value))[:8]
         elif key == "target_audience":
             brand[key] = ", ".join(value) if isinstance(value, list) else value
         elif key in {"value_proposition", "content_pillars", "suggested_content_tone"}:

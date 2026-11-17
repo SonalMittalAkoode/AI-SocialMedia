@@ -209,7 +209,7 @@ def test_valid_onboarding_demo_completion_and_invalidation(client, owner):
     assert complete_step(client, c["id"], "business").status_code == 200
     assert client.post(url + "/brand/confirm", json={"revision": 1}).status_code == 200
     assert complete_step(client, c["id"], "brand").status_code == 200
-    assert complete_step(client, c["id"], "competitors").status_code == 422
+    assert complete_step(client, c["id"], "competitors").status_code == 200
     assert complete_step(client, c["id"], "competitors", demo_acknowledged=True).status_code == 200
     assert complete_step(client, c["id"], "preferences").status_code == 422
     assert client.put(url + "/preferences", json={"revision": 1, "platforms": ["instagram"], "content_goals": ["brand_awareness"], "tone": ["friendly"], "content_formats": ["image_post"]}).status_code == 200

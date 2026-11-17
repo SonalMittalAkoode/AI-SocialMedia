@@ -13,6 +13,7 @@ from app.models import intelligence  # noqa: F401
 from app.models import content  # noqa: F401
 from app.models import scheduling  # noqa: F401
 from app.models import schedule_events  # noqa: F401
+from app.models import brand_logo  # noqa: F401
 
 
 config = context.config

@@ -1,0 +1,130 @@
+{
+  "worker_pid": 5496,
+  "worker_source_sha256": "6543700de777435341e1dcfe17538c0bdd772df7be4dc6bc84f4d0ff5a8f6139",
+  "checks": {
+    "google_display_only": {
+      "sources": 9,
+      "citations": 23,
+      "suggestions_present": true
+    },
+    "independent_research": {
+      "verification": "verified",
+      "score": 57,
+      "persisted": true
+    },
+    "live_text": {
+      "platforms": [
+        "Instagram",
+        "LinkedIn"
+      ],
+      "saved_posts": 2
+    },
+    "live_images": {
+      "count": 2,
+      "downloads": [
+        {
+          "mime": "image/png",
+          "bytes": 708133,
+          "download": true
+        },
+        {
+          "mime": "image/png",
+          "bytes": 1384685,
+          "download": true
+        }
+      ]
+    },
+    "caption_regeneration": {
+      "completed": true,
+      "original_preserved": true
+    },
+    "completion_and_schedule": {
+      "demo_completed": false,
+      "status": "completed",
+      "schedule_status": "scheduled"
+    },
+    "relogin_persistence": true,
+    "akoode_website": {
+      "canonical": "https://www.akoode.com/",
+      "source_pages": 5,
+      "populated_fields": [
+        "company_name",
+        "industry",
+        "business_type",
+        "description",
+        "tagline",
+        "target_audience",
+        "products_services",
+        "brand_voice",
+        "brand_keywords",
+        "country",
+        "public_email",
+        "public_phone",
+        "value_proposition",
+        "content_pillars"
+      ],
+      "industry": "AI & Software Development",
+      "services": 4
+    },
+    "actual_logo": {
+      "stored": true,
+      "mime": "image/svg+xml",
+      "bytes": 11071
+    },
+    "independent_image_regeneration": {
+      "status": "completed",
+      "retained_images": 2
+    },
+    "custom_image_upload": {
+      "stored": true,
+      "source": null,
+      "downloaded_real_image_reuploaded_for_qa": true
+    },
+    "extras_remaining_limitation": "website_unavailable: The website could not be reached securely.",
+    "different_industry": {
+      "website": "https://www.nasa.gov",
+      "name": "NASA",
+      "industry": "Aerospace",
+      "fields_applied": [
+        "company_name",
+        "industry",
+        "business_type",
+        "description",
+        "target_audience",
+        "products_services",
+        "brand_voice",
+        "brand_keywords",
+        "brand_colors",
+        "social_links",
+        "country",
+        "public_email",
+        "public_phone",
+        "value_proposition",
+        "content_pillars",
+        "suggested_content_tone"
+      ],
+      "source_pages": 5
+    }
+  },
+  "prior_failures": [
+    "Job b6467ef6-d71f-46b1-882f-fece65ed8d28: content_validation_failed The generated draft failed quality checks. Refine the topic and retry."
+  ],
+  "verification_note": "Live screenshots show the latest retained caption alternative; original generated images remain in the saved Post Library. No grounded output is retained.",
+  "final_worker": {
+    "pid": 36616,
+    "analyzer_sha256": "f4c6c1c5557a36517f23160580874f37df1733217ff98d9a751c98bd1577379a",
+    "restarted_when_active_jobs": 0
+  },
+  "regression": {
+    "backend_passed": 288,
+    "frontend_unit_passed": 60,
+    "browser_passed": 33,
+    "typescript": "passed",
+    "lint": "passed",
+    "production_build": "passed",
+    "alembic_check": "no new upgrade operations detected",
+    "onboarding_screenshots": 10,
+    "post_library_screenshots": 1,
+    "final_palette_responsive_rechecks": 2
+  }
+}

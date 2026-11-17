@@ -106,8 +106,10 @@ test("quota failure keeps independently sourced manual competitors available", a
   await expect(
     page.getByRole("alert").filter({ hasText: "search_rate_limited" }),
   ).toBeVisible();
+  // The failed-discovery state offers its own "Add competitor" fallback (the header has one too).
   await page
     .getByRole("button", { name: "Add competitor", exact: true })
+    .last()
     .click();
   await expect(page.getByRole("dialog")).toContainText(
     "obtained independently",
@@ -144,9 +146,6 @@ test("onboarding offers the same explicit live search and company switching clea
     route.fulfill({ json: answer }),
   );
   await page.goto("/onboarding/competitors");
-  await page
-    .getByRole("button", { name: "Use real competitor research" })
-    .click();
   await page
     .getByRole("button", { name: "Discover competitors", exact: true })
     .click();

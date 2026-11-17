@@ -59,6 +59,9 @@ class Company(Editable, Base):
     description: Mapped[str | None] = mapped_column(Text)
     country: Mapped[str | None] = mapped_column(String(100))
     city: Mapped[str | None] = mapped_column(String(150))
+    state: Mapped[str | None] = mapped_column(String(150))
+    public_email: Mapped[str | None] = mapped_column(String(254))
+    public_phone: Mapped[str | None] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(12), default="draft", server_default="draft")
     timezone: Mapped[str | None] = mapped_column(String(100))
 
@@ -106,12 +109,15 @@ class ContentPreferences(Editable, Base):
     language: Mapped[str] = mapped_column(String(12), default="english", server_default="english")
     custom_instructions: Mapped[str | None] = mapped_column(Text)
     excluded_topics: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    content_topics: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    target_audience: Mapped[str|None] = mapped_column(Text)
+    visual_style: Mapped[str|None] = mapped_column(Text)
     company = relationship("Company", back_populates="preferences")
 
 
 class OnboardingProgress(Base):
     __tablename__ = "onboarding_progress"
-    __table_args__ = (CheckConstraint("current_step IN ('business','brand','competitors','preferences','generate')", name="ck_onboarding_step"), CheckConstraint("status IN ('in_progress','completed')", name="ck_onboarding_status"), CheckConstraint("(status = 'completed') = (completed_at IS NOT NULL) AND (status <> 'completed' OR demo_completed)", name="ck_onboarding_completion"), CheckConstraint("jsonb_typeof(completed_steps) = 'array' AND jsonb_typeof(demo_steps) = 'array'", name="ck_onboarding_json"))
+    __table_args__ = (CheckConstraint("current_step IN ('business','brand','competitors','preferences','generate')", name="ck_onboarding_step"), CheckConstraint("status IN ('in_progress','completed')", name="ck_onboarding_status"), CheckConstraint("(status = 'completed') = (completed_at IS NOT NULL)", name="ck_onboarding_completion"), CheckConstraint("jsonb_typeof(completed_steps) = 'array' AND jsonb_typeof(demo_steps) = 'array'", name="ck_onboarding_json"))
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), unique=True)
     revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

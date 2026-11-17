@@ -21,37 +21,21 @@ export function Calendar({
   initialStatus?: string;
 }) {
   const { companyId } = useStore();
-  const [demo, setDemo] = useState(false);
-  return (
-    <>
-      <Button variant="ghost" onClick={() => setDemo(!demo)}>
-        {demo ? "View company calendar" : "View demo calendar"}
-      </Button>
-      {demo ? (
-        <>
-          <div className="notice">
-            Demo calendar · browser samples only. These events are not company
-            schedules.
-          </div>
-          <DemoCalendar />
-        </>
-      ) : companyId ? (
-        <RealCalendar
-          key={`${companyId}:${initialSchedule}:${initialStatus}`}
-          companyId={companyId}
-          initialSchedule={initialSchedule}
-          initialStatus={initialStatus}
-        />
-      ) : (
-        <Empty
-          title="Select a company"
-          description="Choose a company to view its saved schedules."
-        />
-      )}
-    </>
+  return companyId ? (
+    <RealCalendar
+      key={`${companyId}:${initialSchedule}:${initialStatus}`}
+      companyId={companyId}
+      initialSchedule={initialSchedule}
+      initialStatus={initialStatus}
+    />
+  ) : (
+    <Empty
+      title="Select a company"
+      description="Select a company to view its saved calendar."
+    />
   );
 }
-function DemoCalendar() {
+export function DemoCalendar() {
   const { state, setState, toast } = useStore();
   const [date, setDate] = useState(() => new Date());
   const [view, setView] = useState("Month");

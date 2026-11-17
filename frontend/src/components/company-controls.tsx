@@ -27,7 +27,7 @@ export function DraftRecovery() {
         </div>
       )}
       {recoverableDraft && (
-        <div className="notice">
+        <div className="notice draft-recovery-notice">
           <span>
             A saved browser draft is available. Server records have not been
             overwritten.
@@ -137,7 +137,8 @@ export function CompanySelector({
       </div>
       <p className="muted">
         Company records, saved posts and schedules stay with your company.
-        Unsaved demo drafts and uploaded logo previews stay in this browser.
+        Unsaved drafts stay in this browser. Saved logos are stored privately
+        with the company.
       </p>
       <DraftRecovery />
     </>
