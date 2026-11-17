@@ -1,7 +1,11 @@
 export type SocialPlatform = "Instagram" | "Facebook" | "LinkedIn" | "X";
 export interface User {
+  id?: string;
   name: string;
   email: string;
+  isActive?: boolean;
+  isVerified?: boolean;
+  createdAt?: string;
 }
 export interface BrandIdentity {
   tones: string[];
@@ -67,6 +71,7 @@ export interface AnalyticsData {
 }
 export interface OnboardingProgress {
   step: number;
+  currentStep?: number;
   completed: boolean;
 }
 export interface DemoState {

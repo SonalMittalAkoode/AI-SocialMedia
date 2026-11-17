@@ -38,6 +38,7 @@ const stateSchema = z.object({
   }),
   onboarding: z.object({
     step: z.number().int().min(0).max(4),
+    currentStep: z.number().int().min(0).max(4).optional(),
     completed: z.boolean(),
   }),
   preferences: z.object({
@@ -69,6 +70,22 @@ const stateSchema = z.object({
   notifications: z.boolean(),
 });
 export const STORAGE_KEY = "socialai-demo-v1";
+export function userStorageKey(userId: string) {
+  return `${STORAGE_KEY}:user:${userId}`;
+}
+// Browser data is a workspace cache, never evidence of an authenticated session.
+export function restoreUserWorkspace(
+  legacy: DemoState,
+  scopedRaw: string | null,
+  user: { id: string; name: string; email: string },
+): DemoState {
+  const source = scopedRaw
+    ? parseState(scopedRaw)
+    : legacy.user?.email.trim().toLowerCase() === user.email.toLowerCase()
+      ? legacy
+      : initialState();
+  return { ...source, user, authenticated: true };
+}
 export function parseState(raw: string | null): DemoState {
   try {
     if (!raw) return initialState();
@@ -93,5 +110,5 @@ export const steps = [
 export function onboardingPath(state: DemoState) {
   return state.onboarding.completed
     ? "/dashboard"
-    : `/onboarding/${steps[Math.min(4, Math.max(0, state.onboarding.step))]}`;
+    : `/onboarding/${steps[Math.min(4, Math.max(0, state.onboarding.currentStep ?? state.onboarding.step))]}`;
 }

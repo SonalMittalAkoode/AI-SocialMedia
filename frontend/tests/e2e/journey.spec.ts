@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { uniqueEmail, signInWorkspace } from "./auth-helpers";
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-11-11T04:30:00Z"));
 });
@@ -6,22 +7,34 @@ test("complete onboarding, persist an edited draft, schedule, and return after l
   page,
 }) => {
   const errors: string[] = [];
+  const email = uniqueEmail();
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/signup");
   await page.getByLabel("Full name").fill("Sam Taylor");
-  await page.getByLabel("Work email").fill("sam@example.com");
+  await page.getByLabel("Work email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill("DemoPassword123");
   await page.getByLabel("Confirm password").fill("DemoPassword123");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create your free account" }).click();
+  await expect(page).toHaveURL("/login");
+  await page.getByLabel("Work email").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill("DemoPassword123");
+  await page.getByRole("button", { name: "Log in to your workspace" }).click();
+  await expect(page).toHaveURL("/dashboard");
+  await expect(
+    page.getByRole("heading", { name: "Workspace overview" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Set up company", exact: true }).click();
   await expect(page).toHaveURL(/onboarding\/business/);
+  await page.getByLabel("Business name *", { exact: true }).fill("Sam’s Cafe");
   await page
-    .getByLabel("Business name (optional)", { exact: true })
-    .fill("Sam’s Cafe");
+    .getByLabel("What do you do? (optional)")
+    .fill("A thoughtful neighborhood cafe serving specialty coffee.");
   await page
     .getByLabel("Business website or social profile URL")
     .fill("https://sams.example");
-  await page.getByRole("button", { name: "Analyze my business" }).click();
+  // Fictional URLs cannot be researched; keep the mock-content regression on the manual path.
+  await page.getByRole("button", { name: "Enter details manually" }).click();
   await expect(page).toHaveURL(/onboarding\/brand/);
   await expect(page.getByLabel("Company name *", { exact: true })).toHaveValue(
     "Sam’s Cafe",
@@ -57,15 +70,17 @@ test("complete onboarding, persist an edited draft, schedule, and return after l
   await page.getByRole("link", { name: "Go to dashboard" }).click();
   await expect(page).toHaveURL("/dashboard");
   await expect(
-    page.getByRole("heading", { name: /Good morning, Sam/ }),
+    page.getByRole("heading", { name: /Workspace overview/ }),
   ).toBeVisible();
   await page.goto("/dashboard/posts");
+  await page.getByRole("button", { name: "View browser demo drafts" }).click();
   await page
     .getByRole("button", { name: "Preview A morning worth sharing" })
     .click();
   await page.getByLabel("Post title", { exact: true }).fill("Our next chapter");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await page.reload();
+  await page.getByRole("button", { name: "View browser demo drafts" }).click();
   await expect(
     page.getByRole("heading", { name: "Our next chapter" }),
   ).toBeVisible();
@@ -74,6 +89,9 @@ test("complete onboarding, persist an edited draft, schedule, and return after l
   await page.getByRole("button", { name: "Plan locally", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Post planned locally");
   await page.goto("/dashboard/calendar");
+  await page
+    .getByRole("button", { name: "View demo calendar", exact: true })
+    .click();
   await expect(
     page.getByRole("button", { name: /Instagram.*Our next chapter/ }),
   ).toBeVisible();
@@ -94,11 +112,12 @@ test("complete onboarding, persist an edited draft, schedule, and return after l
     .last()
     .click();
   await expect(page).toHaveURL("/login");
-  await page.getByLabel("Work email").fill("sam@example.com");
+  await page.getByLabel("Work email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill("DemoPassword123");
   await page.getByRole("button", { name: "Log in to your workspace" }).click();
   await expect(page).toHaveURL("/dashboard");
   await page.goto("/dashboard/posts");
+  await page.getByRole("button", { name: "View browser demo drafts" }).click();
   await expect(
     page.getByRole("heading", { name: "Our next chapter" }),
   ).toBeVisible();
@@ -107,6 +126,9 @@ test("complete onboarding, persist an edited draft, schedule, and return after l
 test("responsive demo screens have no horizontal overflow", async ({
   page,
 }) => {
+  // Sweep 32 route loads plus dashboard captures against the existing dev server.
+  test.setTimeout(120000);
+  await signInWorkspace(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Explore the dashboard" }).click();
   await expect(page).toHaveURL("/dashboard");
@@ -116,6 +138,7 @@ test("responsive demo screens have no horizontal overflow", async ({
       "/",
       "/dashboard",
       "/dashboard/posts",
+      "/dashboard/companies",
       "/dashboard/content-studio",
       "/dashboard/calendar",
       "/dashboard/brand",
@@ -130,7 +153,8 @@ test("responsive demo screens have no horizontal overflow", async ({
       ).toBe(true);
     }
     await page.goto("/dashboard");
-    await expect(page.locator('.welcome-banner')).toHaveCSS('opacity','1');
+    await expect(page.locator(".crm-kpi")).toHaveCount(10);
+    await expect(page.locator(".crm-kpis")).toHaveCSS("opacity", "1");
     await page.screenshot({
       path: `artifacts/dashboard-${width}.png`,
       fullPage: true,
@@ -142,10 +166,12 @@ test("responsive demo screens have no horizontal overflow", async ({
 test("simulated generation can fail and retry without losing configuration", async ({
   page,
 }) => {
+  await signInWorkspace(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Explore the dashboard" }).click();
   await page.goto("/dashboard/content-studio");
-  await page.getByLabel("What’s the story?").fill("Our winter menu");
+  await page.getByRole("button", { name: "Use demo templates" }).click();
+  await page.getByLabel(/What.*the story/).fill("Our winter menu");
   await page.getByLabel("Test a simulated error").check();
   await page.getByRole("button", { name: "Generate my first posts" }).click();
   await expect(

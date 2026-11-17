@@ -7,6 +7,12 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import settings
 from app.db.database import Base
 from app.models.user import User  # noqa: F401
+from app.models import onboarding  # noqa: F401
+from app.models import brand_extraction  # noqa: F401
+from app.models import intelligence  # noqa: F401
+from app.models import content  # noqa: F401
+from app.models import scheduling  # noqa: F401
+from app.models import schedule_events  # noqa: F401
 
 
 config = context.config

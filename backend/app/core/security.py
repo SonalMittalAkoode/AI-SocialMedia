@@ -4,8 +4,9 @@ from uuid import UUID
 
 import jwt
 from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
 
-from app.core.auth_config import JWT_SECRET, JWT_ALGORITHM
+from app.core.auth_config import JWT_SECRET, JWT_ALGORITHM, ACCESS_TOKEN_MINUTES
 
 
 password_hash = PasswordHash.recommended()
@@ -19,15 +20,15 @@ def verify_password(
     plain_password: str,
     hashed_password: str,
 ) -> bool:
-    return password_hash.verify(
-        plain_password,
-        hashed_password,
-    )
+    try:
+        return password_hash.verify(plain_password, hashed_password)
+    except (UnknownHashError, ValueError):
+        return False
 
 
 def create_access_token(user_id: UUID) -> str:
     expires = datetime.now(timezone.utc) + timedelta(
-        minutes=30
+        minutes=ACCESS_TOKEN_MINUTES
     )
 
     payload = {

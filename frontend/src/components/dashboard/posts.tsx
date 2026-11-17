@@ -7,7 +7,31 @@ import Link from "next/link";
 import { PostCard } from "@/components/content/post-card";
 import { PostEditor } from "@/components/content/post-editor";
 import { platforms } from "@/data/fixtures";
-export function Posts({
+import { PostLibrary } from "@/components/content/post-library";
+export function Posts(props: {
+  initialQuery?: string;
+  initialEdit?: string | null;
+  initialStatus?: string;
+  initialView?: string;
+  initialGeneration?: string;
+  initialMedia?: string;
+}) {
+  const { companyId } = useStore();
+  const [demo, setDemo] = useState(false);
+  return (
+    <>
+      <Button variant="ghost" onClick={() => setDemo((v) => !v)}>
+        {demo ? "View saved company posts" : "View browser demo drafts"}
+      </Button>
+      {demo ? (
+        <DemoPosts {...props} />
+      ) : (
+        <PostLibrary key={companyId} {...props} />
+      )}
+    </>
+  );
+}
+function DemoPosts({
   initialQuery = "",
   initialEdit = null,
 }: {

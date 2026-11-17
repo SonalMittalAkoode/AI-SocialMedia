@@ -1,9 +1,15 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Input, Modal, PageHeading } from "@/components/ui";
-import { Metrics } from "./overview";
-import { TrendChart, CategoryChart } from "./charts";
+import Link from "next/link";
+import {
+  Badge,
+  Button,
+  Input,
+  Modal,
+  PageHeading,
+  Empty,
+} from "@/components/ui";
 import { useStore } from "@/store/provider";
 import { platforms } from "@/data/fixtures";
 import {
@@ -12,7 +18,6 @@ import {
   Linkedin,
   Link2,
   LogOut,
-  Sparkles,
   Check,
   Moon,
 } from "lucide-react";
@@ -21,9 +26,9 @@ export function Accounts() {
   return (
     <>
       <PageHeading
-        eyebrow="YOUR BRAND, EVERYWHERE"
-        title="Good things are better connected."
-        description="Bring your social channels together. Real integrations are coming in a future release."
+        eyebrow="INTEGRATIONS"
+        title="Social Accounts"
+        description="Social account connections are not available yet. Review the requirements for each platform below."
       />
       <div className="account-grid">
         {platforms.map((p, i) => {
@@ -42,9 +47,9 @@ export function Accounts() {
                 profile, manage content, and retrieve analytics.
               </p>
               <Button variant="secondary" onClick={() => setSelected(p)}>
-                <Link2 size={15} /> Connect {p}
+                <Link2 size={15} /> Integration requirements
               </Button>
-              <small>No credentials are requested in this demo.</small>
+              <small>Account connection is not available yet.</small>
             </article>
           );
         })}
@@ -52,8 +57,8 @@ export function Accounts() {
       <Modal
         open={!!selected}
         onOpenChange={(o) => !o && setSelected("")}
-        title={`${selected} integration is on the horizon.`}
-        description="This demo does not implement OAuth or connect to social accounts."
+        title={`${selected} integration requirements`}
+        description="Account authorization is not implemented yet. No account has been connected."
       >
         <p>
           No connection has been made. Production integration will require an
@@ -68,113 +73,53 @@ export function Accounts() {
   );
 }
 export function Analytics() {
-  const { state } = useStore();
-  const [range, setRange] = useState("7 days");
-  const total = state.posts.length;
   return (
     <>
       <PageHeading
-        eyebrow="A LITTLE PERSPECTIVE GOES A LONG WAY"
-        title="See the bigger picture."
-        description="Explore your creative rhythm. All engagement and trend data below is illustrative."
-        action={
-          <select
-            aria-label="Analytics date range"
-            value={range}
-            onChange={(e) => setRange(e.target.value)}
-          >
-            <option value="7 days">Last 7 days</option>
-            <option value="30 days">Last 30 days</option>
-          </select>
-        }
+        eyebrow="MEASUREMENT"
+        title="Analytics"
+        description="Platform performance will appear here when real social account analytics are connected."
       />
-      <div className="notice">
-        <Sparkles size={16} /> Sample analytics, not live platform performance.
-        Workspace counts reflect your local posts.
-      </div>
-      <Metrics />
-      <div className="analytics-grid">
-        <section className="panel">
-          <h3>Content creation trends</h3>
-          <p>Illustrative sample dataset · {range}</p>
-          <TrendChart range={range} />
-        </section>
-        <section className="panel">
-          <h3>Example engagement</h3>
-          <p>Illustrative interactions · {range}</p>
-          <TrendChart range={range} engagement />
-        </section>
-        <section className="panel">
-          <h3>Posts by platform</h3>
-          <p>Your saved local content</p>
-          <div className="platform-bars">
-            {platforms.map((p, i) => {
-              const count = state.posts.filter(
-                (post) => post.platform === p,
-              ).length;
-              return (
-                <div key={p}>
-                  <div className="row-between">
-                    <span>{p}</span>
-                    <strong>
-                      {count} <small>posts</small>
-                    </strong>
-                  </div>
-                  <div className="distribution-track">
-                    <div
-                      style={{
-                        width: `${total ? (count / total) * 100 : 0}%`,
-                        background: [
-                          "#ff2dab",
-                          "#7495d0",
-                          "#d4ee3e",
-                          "#ae8cce",
-                        ][i],
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-        <section className="panel">
-          <h3>Content category distribution</h3>
-          <p>Illustrative example · not measured performance</p>
-          <CategoryChart />
-        </section>
-      </div>
       <section className="panel">
-        <h3>Example featured posts</h3>
-        <p>Selection is illustrative; no engagement ranking is available.</p>
-        {state.posts.slice(0, 3).map((p, i) => (
-          <div className="featured-post-row" key={p.id}>
-            <span className={`mini-art mini-art-${i}`}>✳</span>
-            <strong>{p.title}</strong>
-            <span>{p.platform}</span>
-            <Badge>Illustrative example</Badge>
-          </div>
-        ))}
+        <Empty
+          title="No analytics integration connected"
+          description="Reach, impressions, followers and engagement are not available yet. Content operations and saved post counts are available in Overview."
+        />
+        <Button asChild variant="secondary">
+          <Link href="/dashboard">View content overview</Link>
+        </Button>
       </section>
     </>
   );
 }
 export function Settings() {
-  const { state, setState, toast, reset } = useStore();
+  const {
+    state,
+    setState,
+    toast,
+    reset,
+    signOut,
+    isSigningOut,
+    saveWorkspaceName,
+    companyBusy,
+  } = useStore();
   const router = useRouter();
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState("");
   return (
     <>
       <PageHeading
-        eyebrow="MAKE YOURSELF AT HOME"
-        title="The little details, your way."
-        description="Manage your profile, workspace preferences, and local demo data."
+        eyebrow="WORKSPACE ADMINISTRATION"
+        title="Workspace Settings"
+        description="Manage workspace preferences, your session and explicitly local display or demo settings."
       />
       <div className="settings-grid">
         <section className="panel">
           <h3>Your profile</h3>
-          <p>A familiar face in your creative workspace.</p>
+          <p>
+            Local display preview only. Registered account details are restored
+            from the server on refresh.
+          </p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -196,7 +141,11 @@ export function Settings() {
               onChange={(e) =>
                 setState((s) => ({
                   ...s,
-                  user: { name: e.target.value, email: s.user?.email || "" },
+                  user: {
+                    ...s.user,
+                    name: e.target.value,
+                    email: s.user?.email || "",
+                  },
                 }))
               }
             />
@@ -208,17 +157,21 @@ export function Settings() {
               onChange={(e) =>
                 setState((s) => ({
                   ...s,
-                  user: { name: s.user?.name || "", email: e.target.value },
+                  user: {
+                    ...s.user,
+                    name: s.user?.name || "",
+                    email: e.target.value,
+                  },
                 }))
               }
             />
             {error && <p className="error">{error}</p>}
-            <Button type="submit">Save profile</Button>
+            <Button type="submit">Save local display preview</Button>
           </form>
         </section>
         <section className="panel">
           <h3>Workspace preferences</h3>
-          <p>A few things to make this space feel like yours.</p>
+          <p>Update your workspace name and local preferences.</p>
           <Input
             label="Workspace name"
             value={state.workspace.name}
@@ -232,7 +185,9 @@ export function Settings() {
           <div className="settings-row">
             <div>
               <strong>Workspace notifications</strong>
-              <small>Show a notification indicator in your header.</small>
+              <small>
+                Local preference only. No notification service is connected.
+              </small>
             </div>
             <button
               className={`switch ${state.notifications ? "on" : ""}`}
@@ -249,7 +204,7 @@ export function Settings() {
           <div className="settings-row">
             <div>
               <strong>Appearance</strong>
-              <small>A dark canvas for bright ideas.</small>
+              <small>Dark workspace theme.</small>
             </div>
             <Badge>
               <Moon size={12} /> Dark · default
@@ -262,32 +217,45 @@ export function Settings() {
           </div>
           <Button
             variant="secondary"
-            onClick={() => toast("Workspace preferences saved locally.")}
+            disabled={companyBusy}
+            onClick={async () => {
+              try {
+                await saveWorkspaceName();
+                toast(
+                  "Workspace name saved to PostgreSQL. Notification preferences remain local.",
+                );
+              } catch (e) {
+                toast(
+                  e instanceof Error ? e.message : "Workspace save failed.",
+                );
+              }
+            }}
           >
             Save preferences
           </Button>
         </section>
         <section className="panel">
-          <h3>Your data, your call.</h3>
+          <h3>Browser demo data</h3>
           <p>
-            Demo data lives in this browser. Resetting removes your profile,
-            brand edits, preferences, and saved posts.
+            Resetting clears this company&apos;s local demo posts and
+            competitors. Your saved company, brand, preferences, and account
+            remain available.
           </p>
           <Button variant="danger" onClick={() => setConfirm(true)}>
             Reset demo data
           </Button>
         </section>
         <section className="panel">
-          <h3>See you next time.</h3>
+          <h3>Session</h3>
           <p>
             Your workspace will be here when you get back. Log in with the same
             email to resume.
           </p>
           <Button
             variant="secondary"
-            onClick={() => {
-              setState((s) => ({ ...s, authenticated: false }));
-              router.push("/login");
+            disabled={isSigningOut}
+            onClick={async () => {
+              if (await signOut()) router.push("/login");
             }}
           >
             <LogOut size={16} /> Log out
@@ -298,7 +266,7 @@ export function Settings() {
         open={confirm}
         onOpenChange={setConfirm}
         title="Start with a clean canvas?"
-        description="All locally saved demo data will be reset. This cannot be undone."
+        description="This company's local demo posts and competitors will be reset. This cannot be undone."
       >
         <div className="wrap-actions">
           <Button variant="secondary" onClick={() => setConfirm(false)}>

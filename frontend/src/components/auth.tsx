@@ -8,9 +8,8 @@ import { z } from "zod";
 import { Eye, EyeOff, ArrowRight, Sparkles, Check } from "lucide-react";
 import { Logo, Button, Badge } from "@/components/ui";
 import { Creative } from "@/components/content/post-card";
-import { authSchema } from "@/lib/validations";
-import { mockLogin, mockRegisterUser } from "@/lib/mock-api";
-import { onboardingPath } from "@/lib/storage";
+import { authSchema, createAuthSchema } from "@/lib/validations";
+import { registerUser } from "@/lib/auth-api";
 import { useStore } from "@/store/provider";
 export function Auth({
   mode,
@@ -20,7 +19,7 @@ export function Auth({
   const signup = mode === "signup";
   const forgot = mode === "forgot-password";
   const router = useRouter();
-  const { state, setState, toast } = useStore();
+  const { signIn, toast, ready, authStatus, sessionError } = useStore();
   const [visible, setVisible] = useState(false);
   const [remember, setRemember] = useState(true);
   const [sent, setSent] = useState(false);
@@ -31,11 +30,11 @@ export function Auth({
     formState: { errors, isSubmitting },
     setError,
   } = useForm<z.infer<typeof authSchema>>({
-    resolver: zodResolver(authSchema),
+    resolver: zodResolver(createAuthSchema(mode)),
     defaultValues: {
       name: "",
       email: "",
-      password: forgot ? "demopassword" : "",
+      password: "",
       confirm: "",
       terms: false,
     },
@@ -55,25 +54,24 @@ export function Auth({
         setError("confirm", { message: "Confirm your password." });
       return;
     }
-    const user = await (signup ? mockRegisterUser : mockLogin)({
-      name: signup
-        ? data.name
-        : state.user?.email === data.email
-          ? state.user.name
-          : data.email.split("@")[0],
-      email: data.email,
-    });
-    const returning = state.user?.email === data.email;
-    setState((s) => ({
-      ...s,
-      user,
-      authenticated: true,
-      rememberSession: signup || remember,
-      onboarding: returning ? s.onboarding : { step: 0, completed: false },
-    }));
-    if (!remember && !signup)
-      toast("Demo session started. Workspace data remains saved locally.");
-    router.push(returning ? onboardingPath(state) : "/onboarding/business");
+    try {
+      if (signup) {
+        await registerUser({
+          full_name: data.name.trim(),
+          email: data.email,
+          password: data.password,
+        });
+        toast("Account created. Log in to start your workspace.");
+        router.push("/login");
+      } else router.push(await signIn(data.email, data.password, remember));
+    } catch (error) {
+      setError("root", {
+        message:
+          error instanceof Error
+            ? error.message
+            : "Authentication failed. Please try again.",
+      });
+    }
   }
   return (
     <div className="auth-layout">
@@ -94,7 +92,7 @@ export function Auth({
             {signup
               ? "A little about you. A whole lot of possibility."
               : forgot
-                ? "This demo does not send emails. You can return to login and use any valid demo details."
+                ? "Password reset email is not available yet. No reset link will be sent."
                 : "Your brand’s creative workspace is waiting."}
           </p>
           {sent ? (
@@ -108,6 +106,8 @@ export function Auth({
                 <label className="field">
                   <span>Full name</span>
                   <input
+                    aria-label="Full name"
+                    aria-invalid={!!errors.name}
                     autoComplete="name"
                     placeholder="Alex Morgan"
                     {...register("name")}
@@ -120,6 +120,8 @@ export function Auth({
               <label className="field">
                 <span>Work email</span>
                 <input
+                  aria-label="Work email"
+                  aria-invalid={!!errors.email}
                   type="email"
                   autoComplete="email"
                   placeholder="you@yourbrand.com"
@@ -135,11 +137,20 @@ export function Auth({
                     <span>Password</span>
                     <div className="password-input">
                       <input
+                        aria-label="Password"
+                        aria-invalid={!!errors.password}
+                        aria-describedby={
+                          errors.password ? "auth-password-error" : undefined
+                        }
                         type={visible ? "text" : "password"}
                         autoComplete={
                           signup ? "new-password" : "current-password"
                         }
-                        placeholder="At least 8 characters"
+                        placeholder={
+                          signup
+                            ? "12+ characters, a letter and a number"
+                            : "Your password"
+                        }
                         {...register("password")}
                       />
                       <button
@@ -151,7 +162,9 @@ export function Auth({
                       </button>
                     </div>
                     {errors.password && (
-                      <small className="error">{errors.password.message}</small>
+                      <small className="error" id="auth-password-error">
+                        {errors.password.message}
+                      </small>
                     )}
                   </label>
                   {signup && (
@@ -164,15 +177,19 @@ export function Auth({
                         />
                       </div>
                       <small className="muted">
-                        {password.length >= 12
+                        {password.length >= 12 &&
+                        /[a-zA-Z]/.test(password) &&
+                        /[0-9]/.test(password)
                           ? "Strong"
                           : password.length >= 8
                             ? "Good start"
-                            : "Use 8+ characters. Add numbers for strength."}
+                            : "Use 12–128 characters with a letter and a number."}
                       </small>
                       <label className="field">
                         <span>Confirm password</span>
                         <input
+                          aria-label="Confirm password"
+                          aria-invalid={!!errors.confirm}
                           type={visible ? "text" : "password"}
                           autoComplete="new-password"
                           placeholder="One more time"
@@ -209,7 +226,7 @@ export function Auth({
                           checked={remember}
                           onChange={(e) => setRemember(e.target.checked)}
                         />
-                        Remember me in this demo
+                        Remember this browser for 30 minutes
                       </label>
                       <Link className="pink-text" href="/forgot-password">
                         Forgot password?
@@ -218,14 +235,24 @@ export function Auth({
                   )}
                 </>
               )}
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting
-                  ? "Opening your workspace…"
-                  : signup
-                    ? "Create your free account"
-                    : forgot
-                      ? "Preview password reset"
-                      : "Log in to your workspace"}
+              {(errors.root?.message || sessionError) && (
+                <p role="alert" className="error">
+                  {errors.root?.message || sessionError}
+                </p>
+              )}
+              <Button
+                type="submit"
+                disabled={isSubmitting || !ready || authStatus === "checking"}
+              >
+                {!ready || authStatus === "checking"
+                  ? "Checking your session…"
+                  : isSubmitting
+                    ? "Opening your workspace…"
+                    : signup
+                      ? "Create your free account"
+                      : forgot
+                        ? "Preview password reset"
+                        : "Log in to your workspace"}
                 <ArrowRight size={17} />
               </Button>
             </form>
@@ -237,8 +264,9 @@ export function Auth({
             </Link>
           </div>
           <p className="demo-note">
-            Demo authentication only. Passwords are never stored or sent. Saved
-            workspace data stays in this browser.
+            Your account uses secure server authentication. Content and
+            onboarding data are still saved only in this browser. Email
+            verification is not enabled yet.
           </p>
         </div>
         <small className="auth-copyright">

@@ -3,9 +3,12 @@ import Image from "next/image";
 import { Button, Input, Textarea } from "@/components/ui";
 import { useStore } from "@/store/provider";
 import { CompanyProfile } from "@/types";
+import { DraftRecovery } from "@/components/company-controls";
 import { Upload } from "lucide-react";
+import { BrandExtraction } from "@/components/brand-extraction";
 export function BrandForm() {
-  const { state, setState, toast } = useStore();
+  const { state, setState, toast, saveBrand, companyBusy, companyId } =
+    useStore();
   const b = state.workspace.company;
   function update(value: Partial<CompanyProfile>) {
     setState((s) => ({
@@ -22,6 +25,11 @@ export function BrandForm() {
   }
   return (
     <div className="brand-form">
+      <DraftRecovery />
+      <details>
+        <summary>Research website and review previous findings</summary>
+        <BrandExtraction key={companyId || "new"} />
+      </details>
       <div className="brand-logo-row">
         <div className="brand-large-avatar">
           {b.identity.logo ? (
@@ -184,7 +192,17 @@ export function BrandForm() {
       />
       <Button
         variant="secondary"
-        onClick={() => toast("Brand profile saved in this browser.")}
+        disabled={companyBusy}
+        onClick={async () => {
+          try {
+            await saveBrand();
+            toast(
+              "Brand profile saved to PostgreSQL. Material changes require confirmation again.",
+            );
+          } catch (e) {
+            toast(e instanceof Error ? e.message : "Brand save failed.");
+          }
+        }}
       >
         Save brand changes
       </Button>

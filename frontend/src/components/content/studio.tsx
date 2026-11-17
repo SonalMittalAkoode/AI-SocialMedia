@@ -11,14 +11,30 @@ import { GeneratedPost, SocialPlatform } from "@/types";
 import { useStore } from "@/store/provider";
 import { mockGeneratePosts, mockSavePost } from "@/lib/mock-api";
 import { Sparkles, Copy, RefreshCw, Check, AlertCircle } from "lucide-react";
-export function Studio({
+import { RealStudio } from "./real-content";
+export function Studio(props: {
+  onboarding?: boolean;
+  onComplete?: () => void;
+}) {
+  const { companyId } = useStore();
+  const [demo, setDemo] = useState(!!props.onboarding);
+  return (
+    <>
+      <Button variant="ghost" onClick={() => setDemo((v) => !v)}>
+        {demo ? "Use real Gemini generation" : "Use demo templates"}
+      </Button>
+      {demo ? <DemoStudio {...props} /> : <RealStudio key={companyId} />}
+    </>
+  );
+}
+function DemoStudio({
   onboarding = false,
   onComplete,
 }: {
   onboarding?: boolean;
   onComplete?: () => void;
 }) {
-  const { state, setState, toast } = useStore();
+  const { state, setState, toast, companyBusy } = useStore();
   const [platform, setPlatform] = useState<SocialPlatform>(
     state.preferences.platforms[0] || "Instagram",
   );
@@ -35,7 +51,11 @@ export function Studio({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fail, setFail] = useState(false);
-  const [saved, setSaved] = useState<string[]>([]);
+  const [saved, setSaved] = useState<string[]>(() =>
+    state.posts
+      .filter((p) => p.id.length === 36 && p.status === "Draft")
+      .map((p) => p.id),
+  );
   const post = generated[active];
   async function generate() {
     setLoading(true);
@@ -285,7 +305,10 @@ export function Studio({
           <p className="muted">
             Save at least one draft to finish your workspace.
           </p>
-          <Button disabled={!saved.length || loading} onClick={onComplete}>
+          <Button
+            disabled={!saved.length || loading || companyBusy}
+            onClick={onComplete}
+          >
             Complete onboarding <Check size={16} />
           </Button>
         </div>

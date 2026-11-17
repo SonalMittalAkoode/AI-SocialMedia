@@ -6,7 +6,28 @@ import { Badge, Button, Empty, Input, Modal } from "@/components/ui";
 import { Check, Plus, Search, ArrowUpRight } from "lucide-react";
 import { Competitor } from "@/types";
 import { mockDiscoverCompetitors } from "@/lib/mock-api";
+import { RealCompetitors } from "./real-competitors";
 export function Competitors({ onboarding = false }: { onboarding?: boolean }) {
+  const { companyId } = useStore();
+  const [demo, setDemo] = useState(onboarding);
+  return (
+    <>
+      <div className="wrap-actions">
+        <Button variant="ghost" onClick={() => setDemo((v) => !v)}>
+          {demo
+            ? "Use real competitor research"
+            : "View fictional demo competitors"}
+        </Button>
+      </div>
+      {demo ? (
+        <DemoCompetitors onboarding={onboarding} />
+      ) : (
+        <RealCompetitors key={companyId} />
+      )}
+    </>
+  );
+}
+function DemoCompetitors({ onboarding = false }: { onboarding?: boolean }) {
   const { state, setState, toast } = useStore();
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<Competitor | null>(null);

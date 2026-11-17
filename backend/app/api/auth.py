@@ -4,6 +4,7 @@ from uuid import UUID
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -18,19 +19,21 @@ from app.core.security import (
     verify_password,
     create_access_token,
 )
-from app.core.auth_config import JWT_SECRET, JWT_ALGORITHM
+from app.core.auth_config import (
+    JWT_SECRET, JWT_ALGORITHM, ACCESS_TOKEN_MINUTES, COOKIE_NAME, COOKIE_PATH,
+    COOKIE_SECURE, COOKIE_SAMESITE, TRUSTED_ORIGINS,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-FRONTEND_ORIGINS = {
-    "http://localhost:3000",
-}
+# A fixed Argon2 dummy hash keeps unknown-user login on the password-verification path.
+DUMMY_PASSWORD_HASH = hash_password("unused-dummy-password-for-timing-only")
 
 
 def check_origin(request: Request):
     origin = request.headers.get("origin")
-    if origin not in FRONTEND_ORIGINS:
+    if origin not in TRUSTED_ORIGINS:
         raise HTTPException(status_code=403, detail="Invalid origin")
 
 
@@ -38,7 +41,7 @@ def current_user(
     request: Request,
     db: Session = Depends(get_db),
 ) -> User:
-    token = request.cookies.get("access_token")
+    token = request.cookies.get(COOKIE_NAME)
 
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -48,6 +51,7 @@ def current_user(
             token,
             JWT_SECRET,
             algorithms=[JWT_ALGORITHM],
+            options={"require": ["sub", "exp", "iat", "type"]},
         )
 
         if payload.get("type") != "access":
@@ -55,10 +59,14 @@ def current_user(
 
         user_id = UUID(payload["sub"])
 
-    except (jwt.PyJWTError, ValueError, KeyError):
+    except (jwt.PyJWTError, ValueError, KeyError, TypeError, AttributeError):
         raise HTTPException(status_code=401, detail="Invalid session")
 
-    user = db.get(User, user_id)
+    try:
+        user = db.get(User, user_id)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable") from None
 
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid session")
@@ -70,14 +78,18 @@ def current_user(
 def register(
     data: RegisterRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     check_origin(request)
     email = str(data.email).strip().lower()
 
-    existing = db.scalar(
-        select(User).where(User.email == email)
-    )
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        existing = db.scalar(select(User).where(User.email == email))
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable") from None
 
     if existing:
         raise HTTPException(
@@ -95,11 +107,14 @@ def register(
 
     try:
         db.commit()
-    except Exception:
+        db.refresh(user)
+    except IntegrityError:
         db.rollback()
-        raise
+        raise HTTPException(status_code=409, detail="Email already registered") from None
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Registration is temporarily unavailable") from None
 
-    db.refresh(user)
     return user
 
 
@@ -113,13 +128,15 @@ def login(
     check_origin(request)
     email = str(data.email).strip().lower()
 
-    user = db.scalar(
-        select(User).where(User.email == email)
-    )
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        user = db.scalar(select(User).where(User.email == email))
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable") from None
 
-    if not user or not verify_password(
-        data.password, user.hashed_password
-    ):
+    password_valid = verify_password(data.password, user.hashed_password if user else DUMMY_PASSWORD_HASH)
+    if not user or not password_valid:
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password",
@@ -131,20 +148,21 @@ def login(
     token = create_access_token(user.id)
 
     response.set_cookie(
-        key="access_token",
+        key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=False,  # Local HTTP development only
-        samesite="lax",
-        max_age=1800,
-        path="/",
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=ACCESS_TOKEN_MINUTES * 60 if data.remember_me else None,
+        path=COOKIE_PATH,
     )
 
     return user
 
 
 @router.get("/me", response_model=UserResponse)
-def me(user: User = Depends(current_user)):
+def me(response: Response, user: User = Depends(current_user)):
+    response.headers["Cache-Control"] = "no-store"
     return user
 
 
@@ -152,8 +170,11 @@ def me(user: User = Depends(current_user)):
 def logout(request: Request, response: Response):
     check_origin(request)
     response.delete_cookie(
-        key="access_token",
-        path="/",
-        samesite="lax",
+        key=COOKIE_NAME,
+        path=COOKIE_PATH,
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
+        httponly=True,
     )
+    response.headers["Cache-Control"] = "no-store"
     return {"message": "Logged out"}

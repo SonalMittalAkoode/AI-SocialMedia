@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "socialai"
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str = "socialai_db"
+    GEMINI_API_KEY: str
+    GEMINI_MODEL: str = "gemini-3.8-flash"
 
     model_config = SettingsConfigDict(
         env_file=".env",

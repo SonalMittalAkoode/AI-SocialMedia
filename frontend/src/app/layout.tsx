@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Provider } from "@/store/provider";
 import "./globals.css";
+import "./crm.css";
 export const metadata: Metadata = {
   title: "SocialAI — A little intelligence. A lot of impact.",
   description:
-    "Your brand, your voice, powered by AI. A frontend demo social media workspace.",
+    "Social media content operations, brand management and editorial planning powered by AI.",
 };
 export default function RootLayout({
   children,

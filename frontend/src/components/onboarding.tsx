@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,10 +16,12 @@ import { Competitors } from "@/components/competitors";
 import { Preferences } from "@/components/preferences";
 import { Studio } from "@/components/content/studio";
 import { useStore } from "@/store/provider";
-import { mockAnalyzeBrand } from "@/lib/mock-api";
+import { BrandExtraction } from "@/components/brand-extraction";
 import { steps } from "@/lib/storage";
-import { validBrand, websiteSchema } from "@/lib/validations";
+import { validBrand } from "@/lib/validations";
 import { CompanyProfile } from "@/types";
+import { AuthSession } from "@/components/auth-session";
+import { DraftRecovery, CompanySelector } from "@/components/company-controls";
 const labels = [
   "Your business",
   "Brand identity",
@@ -36,44 +38,51 @@ const headings = [
 ];
 const descriptions = [
   "A website. A little context. A world of possibilities.",
-  "Review your illustrative profile and make every detail your own.",
+  "Review your brand profile and make every detail your own.",
   "Explore fictional brands, find a little inspiration, and choose who to follow.",
   "Give your creative partner a little direction. You can always change it later.",
   "Turn your brand’s story into something worth stopping the scroll for.",
 ];
 export function Onboarding({ step }: { step: string }) {
   const index = steps.indexOf(step);
-  const { state, setState, ready, toast } = useStore();
+  const {
+    state,
+    setState,
+    toast,
+    ready,
+    authStatus,
+    saveBusiness,
+    saveBrand,
+    savePreferences,
+    advance,
+    navigate,
+    finish,
+    companyBusy,
+    companyId,
+  } = useStore();
   const router = useRouter();
   const [error, setError] = useState("");
-  const [analyzing, setAnalyzing] = useState(false);
-  const [stage, setStage] = useState(0);
   const [help, setHelp] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const [complete, setComplete] = useState(false);
-  const [skipped, setSkipped] = useState(false);
-  const analysisRequest = useRef(0);
   const b = state.workspace.company;
   useEffect(() => {
-    if (ready && !state.authenticated) router.replace("/login");
+    if (ready && authStatus === "unauthenticated") router.replace("/login");
     else if (
       ready &&
+      authStatus === "authenticated" &&
       index > state.onboarding.step &&
       !state.onboarding.completed
     )
       router.replace(`/onboarding/${steps[state.onboarding.step]}`);
   }, [
     ready,
-    state.authenticated,
+    authStatus,
     state.onboarding.step,
     state.onboarding.completed,
     index,
     router,
   ]);
-  useEffect(() => {
-    if (!analyzing) return;
-    const t = setInterval(() => setStage((s) => Math.min(4, s + 1)), 500);
-    return () => clearInterval(t);
-  }, [analyzing]);
   function update(changes: Partial<CompanyProfile>) {
     setState((s) => ({
       ...s,
@@ -87,42 +96,21 @@ export function Onboarding({ step }: { step: string }) {
       },
     }));
   }
-  function go(next: number) {
+  async function go(next: number) {
     setError("");
-    setState((s) => ({
-      ...s,
-      onboarding: { ...s.onboarding, step: Math.max(s.onboarding.step, next) },
-    }));
-    router.push(`/onboarding/${steps[next]}`);
-  }
-  async function analyze() {
-    const result = websiteSchema.safeParse(b.website);
-    if (!result.success) {
-      setError(result.error.issues[0].message);
-      return;
+    try {
+      await navigate(
+        steps[next] as
+          "business" | "brand" | "competitors" | "preferences" | "generate",
+      );
+      router.push(`/onboarding/${steps[next]}`);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Navigation could not be saved.",
+      );
     }
-    setError("");
-    setStage(0);
-    setAnalyzing(true);
-    setSkipped(false);
-    const request = ++analysisRequest.current;
-    const brand = await mockAnalyzeBrand(b.website, b);
-    if (request !== analysisRequest.current) return;
-    setState((s) => ({
-      ...s,
-      workspace: {
-        ...s.workspace,
-        company: brand,
-        name:
-          s.workspace.name === s.workspace.company.name
-            ? brand.name
-            : s.workspace.name,
-      },
-    }));
-    setAnalyzing(false);
-    go(1);
   }
-  function next() {
+  async function next() {
     if (index === 1 && !validBrand(b.name, b.description)) {
       setError(
         "Add a company name (2+ characters) and a description (10+ characters).",
@@ -139,9 +127,26 @@ export function Onboarding({ step }: { step: string }) {
       setError("Choose at least one platform, goal, tone, and content format.");
       return;
     }
-    go(index + 1);
+    try {
+      if (index === 1) {
+        await saveBrand(true);
+        await advance("brand");
+      }
+      if (index === 2) await advance("competitors");
+      if (index === 3) {
+        await savePreferences();
+        await advance("preferences");
+      }
+      await go(index + 1);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Your step could not be saved.",
+      );
+    }
   }
-  if (!ready || !state.authenticated)
+  if (!ready || authStatus === "checking" || authStatus === "unavailable")
+    return <AuthSession />;
+  if (authStatus !== "authenticated")
     return (
       <div className="loading-page">
         <div className="ai-orb">✳</div>
@@ -160,6 +165,13 @@ export function Onboarding({ step }: { step: string }) {
           </div>
         </div>
         <div className="wrap-actions">
+          <Button
+            variant="ghost"
+            disabled={companyBusy}
+            onClick={() => setChoosing(true)}
+          >
+            Switch company
+          </Button>
           <button
             className="icon-button"
             aria-label="Onboarding help"
@@ -169,9 +181,19 @@ export function Onboarding({ step }: { step: string }) {
           </button>
           <Button
             variant="ghost"
-            onClick={() => {
-              toast("Progress saved. Resume from the homepage or login.");
-              router.push("/");
+            disabled={companyBusy}
+            onClick={async () => {
+              try {
+                if (index === 0) await saveBusiness();
+                if (index === 1) await saveBrand();
+                if (index === 3) await savePreferences();
+                toast(
+                  "Company changes saved. Mock drafts stay in this browser.",
+                );
+                router.push("/dashboard");
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Could not save.");
+              }
             }}
           >
             Save & exit <LogOut size={14} />
@@ -182,7 +204,7 @@ export function Onboarding({ step }: { step: string }) {
         {labels.map((label, i) => (
           <button
             key={label}
-            disabled={i > state.onboarding.step}
+            disabled={companyBusy || i > state.onboarding.step}
             className={i === index ? "current" : i < index ? "done" : ""}
             onClick={() => go(i)}
           >
@@ -192,6 +214,12 @@ export function Onboarding({ step }: { step: string }) {
         ))}
       </div>
       <main className={`onboarding-main ${index === 4 ? "wide" : ""}`}>
+        {index !== 1 && <DraftRecovery />}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
         <div className="onboarding-title">
           <Badge tone="green">
             <Sparkles size={12} /> A LITTLE INTELLIGENCE. ALL YOU.
@@ -199,128 +227,103 @@ export function Onboarding({ step }: { step: string }) {
           <h1>{headings[index]}</h1>
           <p>{descriptions[index]}</p>
         </div>
-        {index === 0 &&
-          (analyzing ? (
-            <div className="analysis-box">
-              <div className="ai-orb">✳</div>
-              <h2>
-                {
-                  [
-                    "Scanning your example website",
-                    "Understanding your business",
-                    "Identifying products and services",
-                    "Exploring brand personality",
-                    "Preparing an editable profile",
-                  ][stage]
-                }
-              </h2>
-              <p>Simulated analysis. No website is accessed.</p>
-              <div className="progress-track">
-                <div style={{ width: `${(stage + 1) * 20}%` }} />
+        {index === 0 && (
+          <div className="business-layout">
+            <section className="panel business-form">
+              <Input
+                label="Business website or social profile URL"
+                value={b.website}
+                placeholder="https://yourbrand.com"
+                onChange={(e) => update({ website: e.target.value })}
+              />
+              <p className="field-hint">
+                Use a public business website for research. Social profiles may
+                restrict access; manual entry is always available.
+              </p>
+              <div className="form-grid">
+                <Input
+                  label="Business name *"
+                  required
+                  value={b.name}
+                  onChange={(e) => update({ name: e.target.value })}
+                />
+                <Input
+                  label="Industry (optional)"
+                  value={b.industry}
+                  onChange={(e) => update({ industry: e.target.value })}
+                />
               </div>
+              <Textarea
+                label="What do you do? (optional)"
+                value={b.description}
+                onChange={(e) => update({ description: e.target.value })}
+              />
+              <Input
+                label="Business location (optional)"
+                value={b.location}
+                onChange={(e) => update({ location: e.target.value })}
+              />
+              {error && (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              )}
+              <BrandExtraction
+                key={companyId || "new"}
+                onApplied={async () => {
+                  await advance("business");
+                  await go(1);
+                }}
+              />
               <Button
                 variant="ghost"
-                onClick={() => {
-                  ++analysisRequest.current;
-                  setSkipped(true);
-                  setAnalyzing(false);
-                  go(1);
+                disabled={companyBusy}
+                onClick={async () => {
+                  try {
+                    await saveBusiness();
+                    await advance("business");
+                    await go(1);
+                  } catch (e) {
+                    setError(
+                      e instanceof Error
+                        ? e.message
+                        : "Save your business name first.",
+                    );
+                  }
                 }}
               >
-                Skip animation
+                Enter details manually
               </Button>
-            </div>
-          ) : (
-            <div className="business-layout">
-              <section className="panel business-form">
-                <Input
-                  label="Business website or social profile URL *"
-                  value={b.website}
-                  placeholder="https://yourbrand.com"
-                  onChange={(e) => update({ website: e.target.value })}
-                />
-                <p className="field-hint">
-                  Start with your website, Instagram, Facebook, LinkedIn, or X
-                  profile.
-                </p>
-                <div className="form-grid">
-                  <Input
-                    label="Business name (optional)"
-                    value={b.name}
-                    onChange={(e) => update({ name: e.target.value })}
-                  />
-                  <Input
-                    label="Industry (optional)"
-                    value={b.industry}
-                    onChange={(e) => update({ industry: e.target.value })}
-                  />
-                </div>
-                <Textarea
-                  label="What do you do? (optional)"
-                  value={b.description}
-                  onChange={(e) => update({ description: e.target.value })}
-                />
-                <Input
-                  label="Business location (optional)"
-                  value={b.location}
-                  onChange={(e) => update({ location: e.target.value })}
-                />
-                {error && (
-                  <p className="error" role="alert">
-                    {error}
-                  </p>
-                )}
-                <Button onClick={analyze}>
-                  <Sparkles size={17} /> Analyze my business{" "}
-                  <ArrowRight size={16} />
-                </Button>
-                <Button variant="ghost" onClick={() => go(1)}>
-                  Enter details manually
-                </Button>
-              </section>
-              <aside className="business-aside">
-                <div className="ai-orb">✳</div>
-                <h3>
-                  A good story starts
-                  <br />
-                  with a little curiosity.
-                </h3>
-                <p>
-                  We’ll prepare an editable starting point for your brand voice,
-                  audience, and content.
-                </p>
-                <div className="notice">
-                  This is a demo. Brew & Bean is fictional. Other URLs receive
-                  illustrative details for your review.
-                </div>
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    update({
-                      website: "https://brewandbean.example",
-                      name: "Brew & Bean",
-                    });
-                    toast("Sample company selected.");
-                  }}
-                >
-                  Use the Brew & Bean example <ArrowUpRightIcon />
-                </button>
-              </aside>
-            </div>
-          ))}
+            </section>
+            <aside className="business-aside">
+              <div className="ai-orb">✳</div>
+              <h3>
+                A good story starts
+                <br />
+                with a little curiosity.
+              </h3>
+              <p>
+                We’ll prepare an editable starting point for your brand voice,
+                audience, and content.
+              </p>
+              <div className="notice">
+                Research uses public website content and Gemini. Review facts,
+                inferences, suggestions, and evidence before applying anything.
+              </div>
+            </aside>
+          </div>
+        )}
         {index === 1 && (
           <>
             <div className="notice">
-              <Sparkles size={16} />
-              {skipped ? "Animation skipped. " : ""}Illustrative demo profile.
-              Please confirm every detail; no live website analysis was
-              performed.
+              Review your saved brand and confirm every detail. Website findings
+              are applied only when you approve selected fields.
             </div>
             <div className="panel">
               <BrandForm />
             </div>
             <Button variant="ghost" onClick={() => go(0)}>
-              Reanalyze · simulated
+              Research website or enter details
             </Button>
           </>
         )}
@@ -329,12 +332,17 @@ export function Onboarding({ step }: { step: string }) {
         {index === 4 && (
           <Studio
             onboarding
-            onComplete={() => {
-              setState((s) => ({
-                ...s,
-                onboarding: { step: 4, completed: true },
-              }));
-              setComplete(true);
+            onComplete={async () => {
+              try {
+                await finish();
+                setComplete(true);
+              } catch (e) {
+                setError(
+                  e instanceof Error
+                    ? e.message
+                    : "Onboarding completion failed.",
+                );
+              }
             }}
           />
         )}
@@ -349,7 +357,7 @@ export function Onboarding({ step }: { step: string }) {
                   {error}
                 </p>
               )}
-              <Button onClick={next}>
+              <Button onClick={next} disabled={companyBusy}>
                 {
                   [
                     "",
@@ -371,24 +379,34 @@ export function Onboarding({ step }: { step: string }) {
           </Button>
         )}
         <p className="onboarding-save-note">
-          <Check size={12} /> Progress saves automatically in this browser.
+          <Check size={12} /> Company changes save to the server when you
+          continue or save. Mock content stays local.
         </p>
       </main>
       <Modal
         open={help}
         onOpenChange={setHelp}
         title="A little help along the way"
-        description="Everything here is an editable frontend demo."
+        description="Company records, website research, competitor research and Gemini content/image generation are real. The competitor and content steps start in a labelled demo mode you can switch off."
       >
         <p>
-          Your progress saves automatically. Use the step navigation to revisit
-          completed sections. Competitors are optional, and no social connection
-          is required.
+          Continue or Save & Exit to save company data. Use the step navigation
+          to revisit completed sections. Competitors are optional, and no social
+          connection is required.
         </p>
         <p>
-          No URLs are fetched. No live AI, publishing, or analytics are
-          connected.
+          Website research retrieves permitted public pages and sends their text
+          to Gemini. Review findings before applying them. Social publishing
+          and analytics are not connected yet.
         </p>
+      </Modal>
+      <Modal
+        open={choosing}
+        onOpenChange={setChoosing}
+        title="Your workspaces and companies"
+        description="Select an authorized company or begin another company setup."
+      >
+        <CompanySelector />
       </Modal>
       <Modal
         open={complete}
@@ -416,7 +434,4 @@ export function Onboarding({ step }: { step: string }) {
       </Modal>
     </div>
   );
-}
-function ArrowUpRightIcon() {
-  return <ArrowRight size={14} />;
 }

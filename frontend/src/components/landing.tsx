@@ -56,17 +56,13 @@ const features = [
   },
 ];
 export function Landing() {
-  const { setState } = useStore();
+  const { authStatus, ready } = useStore();
   const router = useRouter();
   const [menu, setMenu] = useState(false);
   function demo() {
-    setState((s) => ({
-      ...s,
-      user: s.user || { name: "Alex Morgan", email: "alex@example.com" },
-      authenticated: true,
-      onboarding: { step: 4, completed: true },
-    }));
-    router.push("/dashboard");
+    router.push(
+      authStatus === "authenticated" ? "/dashboard" : "/login",
+    );
   }
   return (
     <div className="marketing">
@@ -119,7 +115,11 @@ export function Landing() {
                 Get started for free <ArrowRight size={17} />
               </Link>
             </Button>
-            <Button variant="secondary" onClick={demo}>
+            <Button
+              variant="secondary"
+              onClick={demo}
+              disabled={!ready || authStatus === "checking"}
+            >
               Explore the dashboard <ArrowUpRight size={16} />
             </Button>
           </div>

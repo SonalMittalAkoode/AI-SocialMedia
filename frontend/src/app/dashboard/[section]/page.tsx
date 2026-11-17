@@ -6,6 +6,7 @@ import { Competitors } from "@/components/competitors";
 import { Calendar } from "@/components/dashboard/calendar";
 import { BrandForm } from "@/components/brand-form";
 import { Accounts, Analytics, Settings } from "@/components/dashboard/sections";
+import { Companies } from "@/components/dashboard/companies";
 const sections = [
   "content-studio",
   "posts",
@@ -15,6 +16,7 @@ const sections = [
   "accounts",
   "analytics",
   "settings",
+  "companies",
 ];
 export function generateStaticParams() {
   return sections.map((section) => ({ section }));
@@ -24,7 +26,15 @@ export default async function Page({
   searchParams,
 }: {
   params: Promise<{ section: string }>;
-  searchParams: Promise<{ q?: string; edit?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    edit?: string;
+    status?: string;
+    view?: string;
+    generation?: string;
+    media?: string;
+    schedule?: string;
+  }>;
 }) {
   const { section } = await params;
   const search = await searchParams;
@@ -33,9 +43,9 @@ export default async function Page({
       return (
         <>
           <PageHeading
-            eyebrow="A BLANK PAGE. ENDLESS POSSIBILITIES."
-            title="Let’s make something worth sharing."
-            description="Your brand’s voice, a little inspiration, and a whole new direction."
+            eyebrow="CONTENT CREATION"
+            title="AI Content Studio"
+            description="Generate content using your confirmed brand. Review results and save the drafts you want to keep."
           />
           <Studio />
         </>
@@ -43,31 +53,42 @@ export default async function Page({
     case "posts":
       return (
         <Posts
-          key={`${search.q}-${search.edit}`}
+          key={`${search.q}-${search.edit}-${search.status}-${search.view}-${search.generation}-${search.media}`}
           initialQuery={search.q}
           initialEdit={search.edit}
+          initialStatus={search.status}
+          initialView={search.view}
+          initialGeneration={search.generation}
+          initialMedia={search.media}
         />
       );
     case "competitors":
       return (
         <>
           <PageHeading
-            eyebrow="INSPIRATION IS EVERYWHERE"
-            title="A fresh perspective on your market."
-            description="Explore example strategies and find the space only your brand can fill."
+            eyebrow="MARKET RESEARCH"
+            title="Competitor Intelligence"
+            description="Research and review company competitors using saved evidence and real analysis."
           />
           <Competitors />
         </>
       );
     case "calendar":
-      return <Calendar />;
+      return (
+        <Calendar
+          initialSchedule={search.schedule}
+          initialStatus={search.status}
+        />
+      );
+    case "companies":
+      return <Companies />;
     case "brand":
       return (
         <>
           <PageHeading
-            eyebrow="THE HEART OF YOUR WORKSPACE"
-            title="Every detail. Entirely you."
-            description="Shape the identity that guides your next great post."
+            eyebrow="COMPANY IDENTITY"
+            title="Brand Profile"
+            description="Manage business information, brand research and confirmation."
           />
           <div className="panel brand-profile-panel">
             <BrandForm />
