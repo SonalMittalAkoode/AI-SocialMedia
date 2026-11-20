@@ -10,3 +10,4 @@ response = client.models.generate_content(
 )
 
 print(response.text)
+ 

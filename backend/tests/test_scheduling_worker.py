@@ -76,7 +76,7 @@ def test_shared_worker_scheduling_runs_during_long_ai_job(monkeypatch):
         with pytest.raises(asyncio.CancelledError):await worker.main()
         assert tick.is_set()
     monkeypatch.setattr(worker,'SessionLocal',Storage)
-    monkeypatch.setattr(worker,'GeminiBrandAnalyzer',Analyzer)
+    monkeypatch.setattr(worker.ai_provider,'create_analyzer',Analyzer)
     monkeypatch.setattr(worker.ai_queue,'claim',lambda db:('isolated-test',))
     asyncio.run(exercise());assert closed==[True]
 

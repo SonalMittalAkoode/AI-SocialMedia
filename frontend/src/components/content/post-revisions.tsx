@@ -18,11 +18,14 @@ type CaptionFields = Pick<Draft, "caption" | "hashtags" | "hook" | "call_to_acti
 export function CaptionRegenerator({
   companyId,
   postId,
+  path,
   disabled,
   onApply,
 }: {
   companyId: string;
-  postId: string;
+  postId?: string;
+  /** Endpoint that queues the caption job; defaults to the saved post's regenerate route. */
+  path?: string;
   disabled?: boolean;
   onApply: (fields: CaptionFields) => void;
 }) {
@@ -61,7 +64,7 @@ export function CaptionRegenerator({
           setError("");
           setSuggestion(null);
           try {
-            const job = await startOperation(companyId, `/posts/${postId}/regenerate`, { mode: "caption" });
+            const job = await startOperation(companyId, path ?? `/posts/${postId}/regenerate`, { mode: "caption" });
             setJobId(job.id);
           } catch (e) {
             setError(e instanceof Error ? e.message : "Could not start");

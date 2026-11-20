@@ -2,8 +2,10 @@
 import { useStore } from "@/store/provider";
 import { ContentPreferences } from "@/types";
 import { platforms } from "@/data/fixtures";
-import { Badge, Input, Select, Textarea } from "@/components/ui";
+import { preferenceTones } from "@/lib/company-state";
+import { Badge, Button, Input, Select, Textarea } from "@/components/ui";
 import { Check, Instagram, Facebook, Linkedin } from "lucide-react";
+import { useState } from "react";
 export function Preferences() {
   const { state, setState } = useStore();
   const p = state.preferences;
@@ -102,16 +104,7 @@ export function Preferences() {
           "Product Promotion",
           "Community Building",
         ])}
-        {choices("How should your brand sound?", "tones", [
-          "Professional",
-          "Friendly",
-          "Funny",
-          "Bold",
-          "Inspirational",
-          "Educational",
-          "Trendy",
-          "Premium",
-        ])}
+        {choices("How should your brand sound?", "tones", preferenceTones)}
         {choices("What would you like to create?", "formats", [
           "Image Posts",
           "Carousel Posts",
@@ -198,4 +191,21 @@ export function Preferences() {
       </aside>
     </div>
   );
+}
+
+export function ContentPreferenceSettings() {
+  const { companyId, companyBusy, savePreferences } = useStore();
+  const [open, setOpen] = useState(false);
+  const [feedback, setFeedback] = useState<{ error: boolean; message: string }>();
+  if (!companyId) return null;
+  return <details className="panel brand-profile-panel" onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>Content preferences</summary>
+    {open && <><Preferences />
+    <Button variant="secondary" disabled={companyBusy} onClick={async () => {
+      setFeedback(undefined);
+      try { await savePreferences(); setFeedback({ error: false, message: "Content preferences saved." }); }
+      catch (error) { setFeedback({ error: true, message: error instanceof Error ? error.message : "Preferences could not be saved." }); }
+    }}>Save content preferences</Button>
+    {feedback && <p role={feedback.error ? "alert" : "status"}>{feedback.message}</p>}</>}
+  </details>;
 }

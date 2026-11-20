@@ -23,7 +23,27 @@ class IntelligenceSettings(BaseSettings):
     research_timeout: int = Field(150, ge=60, le=240)
     # Native image models can take longer than structured text responses.
     image_timeout: int = Field(120, ge=30, le=240)
+    # Optional subjective review of each generated image by a multimodal model (one bounded call per image).
+    image_review: bool = False
+    image_review_model: str | None = None  # defaults to the active provider's text model
+    image_review_timeout: int = Field(25, ge=5, le=60)
+    # Edit-capable variations send the previous image to the native image model.
+    image_edit_enabled: bool = True
     max_bulk_research: int = Field(10, ge=1, le=20)
+    # OpenAI call bounds (AI_OPENAI_*). SDK retries are disabled; only transient errors retry.
+    openai_timeout: int = Field(60, ge=10, le=180)
+    openai_max_attempts: int = Field(2, ge=1, le=3)
+    openai_text_reasoning: str = Field("low", pattern="^(none|low|medium|high)$")
+    openai_research_reasoning: str = Field("low", pattern="^(low|medium|high)$")
+    openai_text_timeout: int = Field(45, ge=10, le=120)
+    openai_text_max_output_tokens: int = Field(12000, ge=2000, le=32000)
+    openai_analysis_timeout: int = Field(45, ge=10, le=120)
+    openai_analysis_max_output_tokens: int = Field(16000, ge=2000, le=32000)
+    openai_image_quality: str = Field("medium", pattern="^(low|medium|high|auto)$")
+    # Application safeguards; provider budget alerts are not hard spending limits.
+    daily_company_limit: int = Field(80, ge=1, le=1000)
+    daily_image_limit: int = Field(30, ge=1, le=500)
+    daily_global_limit: int = Field(400, ge=1, le=10000)
     max_attempts: int = Field(2, ge=1, le=3)
     hourly_company_limit: int = Field(12, ge=1, le=50)
     hourly_user_limit: int = Field(24, ge=1, le=100)

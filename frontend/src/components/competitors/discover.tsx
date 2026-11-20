@@ -17,7 +17,7 @@ export type Discovery = {
 };
 
 const INFO =
-  "AI-powered discovery helps you explore your competitive landscape. Search suggestions are for reference and are not automatically saved or researched.";
+  "Discovery suggestions are for reference only. Independently sourced competitors can be added and researched separately.";
 
 function FactChips({ company }: { company: CompanyFacts }) {
   const facts = (
@@ -44,11 +44,17 @@ function FactChips({ company }: { company: CompanyFacts }) {
 export function DiscoverPanel({
   company,
   available,
+  configured,
+  canManage,
+  loaded,
   discovery,
   onAdd,
 }: {
   company: CompanyFacts;
   available: boolean;
+  configured: boolean;
+  canManage: boolean;
+  loaded: boolean;
   discovery: Discovery;
   onAdd: () => void;
 }) {
@@ -61,8 +67,8 @@ export function DiscoverPanel({
             <Compass size={18} aria-hidden />
           </span>
           <div>
-            <h2>Find your competitive landscape</h2>
-            <p>Explore businesses that operate in your industry, serve similar audiences, or offer competing products and services.</p>
+            <h2>Discover your competitive landscape</h2>
+            <p>Find relevant businesses based on your industry, services, target audience and market.</p>
           </div>
         </div>
         <FactChips company={company} />
@@ -70,29 +76,30 @@ export function DiscoverPanel({
           <Info size={14} aria-hidden />
           {INFO}
         </p>
-        {!available && (
+        {loaded && !configured && (
           <p className="cx-info cx-info-warn">
             <Info size={14} aria-hidden />
             Discovery is not configured for this workspace (search_provider_not_configured). You can still add independently sourced competitors.
           </p>
         )}
+        {loaded && configured && !canManage && <p className="cx-muted">An owner or admin can run discovery for this workspace.</p>}
       </section>
 
       {busy ? (
         <div className="cx-card cx-discover-loading" role="status">
           <Loader2 size={18} className="ci-spin" aria-hidden />
           <div>
-            <strong>Searching with Gemini and Google Search…</strong>
+            <strong>Searching the web for relevant competitors…</strong>
             <p>Results appear here and are not saved.</p>
           </div>
         </div>
       ) : error ? (
         <div className="cx-card">
-          <EmptyState icon={SearchX} title="Discovery couldn't be completed." description="The search provider is currently unavailable. Try again or continue with independent competitor research.">
+          <EmptyState icon={SearchX} title="Discovery couldn't be completed." description="Try again or continue with independent competitor research.">
             <Button onClick={run} disabled={!available}>
               <RotateCcw size={14} /> Retry discovery
             </Button>
-            <Button variant="secondary" onClick={onAdd}>
+            <Button variant="secondary" onClick={onAdd} disabled={!canManage}>
               <Plus size={14} /> Add competitor
             </Button>
           </EmptyState>
@@ -101,10 +108,10 @@ export function DiscoverPanel({
           </p>
         </div>
       ) : answer ? (
-        <GroundedResult answer={answer} onDismiss={discovery.dismiss} />
+        <GroundedResult answer={answer} onDismiss={discovery.dismiss} onDiscover={run} />
       ) : (
         <div className="cx-card">
-          <EmptyState icon={Sparkles} title="Your competitive landscape awaits." description="Discover businesses in your industry and explore new opportunities for your brand.">
+          <EmptyState icon={Sparkles} title="Your competitive landscape awaits." description="Discover relevant businesses and explore new opportunities for your brand.">
             <Button onClick={run} disabled={!available || busy}>
               Discover competitors
             </Button>
@@ -196,22 +203,26 @@ function Blocks({ blocks, answer, top = false }: { blocks: Block[]; answer: Grou
   });
 }
 
-export function GroundedResult({ answer, onDismiss }: { answer: GroundedAnswer; onDismiss: () => void }) {
+export function GroundedResult({ answer, onDismiss, onDiscover, actionLabel = "Run another discovery", busy = false }: { answer: GroundedAnswer; onDismiss: () => void; onDiscover: () => void; actionLabel?: string; busy?: boolean }) {
   const blocks = useMemo(() => parseMarkdown(withCitationMarkers(answer)), [answer]);
   const cited = citedSourceCount(answer);
+  // Attribution follows the provider that produced this answer.
+  const google = answer.provider === "gemini";
+  const title = google ? "Google grounded search results" : "OpenAI web search results";
   return (
-    <article aria-label="Google grounded search results" className="cx-card gm-result">
+    <article aria-label={title} className="cx-card gm-result">
       <header className="gm-head">
         <div>
-          <h3>Google grounded search results</h3>
+          <h3>{title}</h3>
           <p>
             {answer.sources.length} source{answer.sources.length === 1 ? "" : "s"}
-            {cited !== answer.sources.length ? ` · ${cited} cited` : ""} · Grounded with Google Search · Unverified suggestions, shown only for this session
+            {cited !== answer.sources.length ? ` · ${cited} cited` : ""} · {google ? "Grounded with Google Search" : "Searched with OpenAI web search"} · Unverified suggestions, shown only for this session
           </p>
         </div>
-        <Button variant="ghost" onClick={onDismiss} aria-label="Dismiss search results">
-          <X size={14} /> Dismiss
-        </Button>
+        <div className="cx-header-actions">
+          <Button variant="secondary" onClick={onDiscover} disabled={busy}><RotateCcw size={14} /> {actionLabel}</Button>
+          <Button variant="ghost" onClick={onDismiss} aria-label="Dismiss search results"><X size={14} /> Dismiss</Button>
+        </div>
       </header>
       <div className="gm-body">
         <Blocks blocks={blocks} answer={answer} top />
@@ -234,16 +245,18 @@ export function GroundedResult({ answer, onDismiss }: { answer: GroundedAnswer; 
           ))}
         </ol>
       </section>
-      <section className="gm-suggestions" aria-label="Google Search Suggestions">
-        <h4>Google Search Suggestions</h4>
-        {/* Google's required snippet, isolated: no scripts, forms or same-origin access. */}
-        <iframe
-          title="Google Search Suggestions"
-          sandbox="allow-popups allow-popups-to-escape-sandbox"
-          referrerPolicy="no-referrer"
-          srcDoc={suggestionsDocument(answer.search_suggestions_html)}
-        />
-      </section>
+      {google && answer.search_suggestions_html && (
+        <section className="gm-suggestions" aria-label="Google Search Suggestions">
+          <h4>Google Search Suggestions</h4>
+          {/* Google's required snippet, isolated: no scripts, forms or same-origin access. */}
+          <iframe
+            title="Google Search Suggestions"
+            sandbox="allow-popups allow-popups-to-escape-sandbox"
+            referrerPolicy="no-referrer"
+            srcDoc={suggestionsDocument(answer.search_suggestions_html)}
+          />
+        </section>
+      )}
     </article>
   );
 }

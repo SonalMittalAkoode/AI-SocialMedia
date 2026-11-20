@@ -11,6 +11,7 @@ from app.schemas.content import PostResponse
 from app.schemas.scheduling import ScheduleResponse
 from app.schemas.onboarding import CompanyResponse
 from app.services.scheduling import calendar_rows, zone_for
+from app.services.social_accounts import account_counts
 
 
 def post_query(company_id, q='', platform=None, status=None):
@@ -84,11 +85,15 @@ def generation_history(db, company_id, limit=20, offset=0):
 
 
 def summary(db, company):
+    now = datetime.now(timezone.utc)
+    active_states = ('scheduled', 'awaiting_publisher', 'blocked')
     counts = db.execute(select(func.count(Post.id), *[func.count(Post.id).filter(Post.status == s)
         for s in ['draft', 'ready_for_review', 'approved', 'archived']]).where(Post.company_id == company.id)).one()
     plans = db.execute(select(func.count(func.distinct(PostSchedule.post_id)).filter(PostSchedule.status == 'scheduled'),
         func.count(func.distinct(PostSchedule.post_id)).filter(PostSchedule.status == 'awaiting_publisher'),
-        func.count(PostSchedule.id).filter(PostSchedule.status == 'blocked'))
+        func.count(PostSchedule.id).filter(PostSchedule.status == 'blocked'),
+        func.count(func.distinct(PostSchedule.post_id)).filter(
+            PostSchedule.status.in_(active_states), PostSchedule.scheduled_at >= now))
         .where(PostSchedule.company_id == company.id)).one()
     recent = db.scalars(post_query(company.id).order_by(Post.updated_at.desc(), Post.id).limit(6)).all()
     review = db.scalars(post_query(company.id).where(Post.status.in_(['draft', 'ready_for_review']))
@@ -102,10 +107,13 @@ def summary(db, company):
         'company_id': company.id, 'company_timezone': zone_for(company),
         'scheduled_posts': plans[0], 'awaiting_publisher': plans[1], 'blocked_schedules': plans[2],
         'recent_posts': recent, 'awaiting_approval': review,
-        'upcoming_schedules': calendar_rows(db, company.id, datetime.now(timezone.utc), None, None, 'scheduled', 5, 0),
+        'upcoming_schedules': calendar_rows(db, company.id, now, None, None, 'scheduled', 5, 0),
+        'upcoming_scheduled_posts': plans[3],
+        'upcoming_active_schedules': calendar_rows(db, company.id, now, None, None, None, 3, 0, statuses=active_states),
         'recent_activity': [dict(zip(('id', 'schedule_id', 'post_id', 'title', 'event_type', 'created_at'), r)) for r in activity],
         'recent_generations': generation_history(db, company.id, 4)['items'],
         'content_stats': content_stats(db, company.id), 'competitor_stats': competitor_stats(db, company.id),
+        'social_account_stats': account_counts(db, company.id),
         'publishing_available': False, 'analytics_available': False}
 
 

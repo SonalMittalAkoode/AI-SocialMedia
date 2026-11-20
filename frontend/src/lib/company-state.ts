@@ -1,7 +1,6 @@
-import { DemoState, SocialPlatform } from "@/types";
+import { ContentPreferences, DemoState, SocialPlatform } from "@/types";
 import { initialState } from "@/data/fixtures";
-import { CompanyBundle, WorkspaceRecord } from "@/lib/company-api";
-import { steps } from "@/lib/storage";
+import { BrandRecord, CompanyBundle, WorkspaceRecord } from "@/lib/company-api";
 export const platformLabels: Record<string, SocialPlatform> = {
   instagram: "Instagram",
   facebook: "Facebook",
@@ -39,6 +38,68 @@ export const languageLabels: Record<string, string> = {
 const lookup = (labels: Record<string, string>, value: string) =>
   Object.keys(labels).find((k) => labels[k] === value) || value.toLowerCase();
 const text = (value: string) => value.trim() || null;
+export const preferenceTones = [
+  "Professional",
+  "Friendly",
+  "Funny",
+  "Bold",
+  "Inspirational",
+  "Educational",
+  "Trendy",
+  "Premium",
+];
+
+function suggestedPreferences(brand: BrandRecord): Partial<ContentPreferences> {
+  const guidelines = (brand.content_guidelines || "")
+    .split("\n")
+    .map((line) => line.trim());
+  const recommendation = (label: string) =>
+    guidelines
+      .findLast((line) => line.toLowerCase().startsWith(`${label}:`))
+      ?.slice(label.length + 1)
+      .trim();
+  const topicList = (value: string) =>
+    [...new Set(value.split(",").map((topic) => topic.trim()))]
+      .filter((topic) => topic && topic.length <= 100)
+      .slice(0, 30)
+      .join(", ");
+  const topics =
+    recommendation("content pillars") || brand.products_services.join(", ");
+  const voice = [
+    ...(recommendation("suggested content tone") || "").split(","),
+    ...brand.brand_voice,
+  ].map((tone) => tone.trim().toLowerCase());
+  const instructions = guidelines
+    .filter(
+      (line) =>
+        !/^(content pillars|suggested content tone|topics to avoid):/i.test(
+          line,
+        ),
+    )
+    .join("\n")
+    .trim();
+  return {
+    targetAudience: brand.target_audience || "",
+    topics: topicList(topics),
+    excludedTopics: topicList(
+      recommendation("topics to avoid") ||
+        "Unverified claims, Off-topic promotions",
+    ),
+    visualStyle: brand.brand_colors.length
+      ? `Use the brand palette (${brand.brand_colors.join(", ")}) consistently across imagery and graphics.`
+      : "",
+    instructions:
+      instructions || (brand.tagline ? `Brand tagline: ${brand.tagline}` : ""),
+    platforms: Object.keys(brand.social_links).flatMap((platform) =>
+      Object.hasOwn(platformLabels, platform) ? [platformLabels[platform]] : [],
+    ),
+    tones: preferenceTones.filter(
+      (tone) =>
+        voice.includes(tone.toLowerCase()) ||
+        (tone === "Inspirational" && voice.includes("inspiring")),
+    ),
+  };
+}
 export function companyCacheKey(user: string, company: string) {
   return `socialai-company-draft:${user}:${company}`;
 }
@@ -74,6 +135,10 @@ export function applyBundle(
   const { company: c, brand: b, preferences: p, progress: g } = bundle;
   const defaults = initialState().preferences;
   const initial = p.revision === 1;
+  const suggested =
+    initial && b.is_confirmed && !g.completed_steps.includes("preferences")
+      ? suggestedPreferences(b)
+      : {};
   return {
     ...base,
     workspace: {
@@ -83,12 +148,15 @@ export function applyBundle(
         name: b.display_name || c.name,
         website: c.website_url || c.source_social_url || "",
         industry: c.industry || "",
+        brandSource: b.source,
+        ...(b.tagline ? { tagline: b.tagline } : {}),
         businessType: c.business_type || "",
         state: c.state || "",
         city: c.city || "",
         country: c.country || "",
         publicEmail: c.public_email || "",
         publicPhone: c.public_phone || "",
+        officeAddress: c.office_address || "",
         keywords: (b.brand_keywords || []).join(", "),
         description: b.description || c.description || "",
         location: [c.city, c.country].filter(Boolean).join(", "),
@@ -104,14 +172,17 @@ export function applyBundle(
       },
     },
     preferences: {
-      targetAudience: p.target_audience || "",
-      topics: (p.content_topics || []).join(", "),
-      excludedTopics: p.excluded_topics.join(", "),
-      visualStyle: p.visual_style || "",
+      targetAudience: p.target_audience || suggested.targetAudience || "",
+      topics: p.content_topics?.join(", ") || suggested.topics || "",
+      excludedTopics:
+        p.excluded_topics.join(", ") || suggested.excludedTopics || "",
+      visualStyle: p.visual_style || suggested.visualStyle || "",
       platforms: p.platforms.length
         ? p.platforms.map((v) => platformLabels[v])
         : initial
-          ? defaults.platforms
+          ? suggested.platforms?.length
+            ? suggested.platforms
+            : defaults.platforms
           : [],
       goals: p.content_goals.length
         ? p.content_goals.map((v) => goalLabels[v])
@@ -121,7 +192,9 @@ export function applyBundle(
       tones: p.tone.length
         ? p.tone.map((v) => v[0].toUpperCase() + v.slice(1))
         : initial
-          ? defaults.tones
+          ? suggested.tones?.length
+            ? suggested.tones
+            : defaults.tones
           : [],
       formats: p.content_formats.length
         ? p.content_formats.map((v) => formatLabels[v])
@@ -132,14 +205,17 @@ export function applyBundle(
         frequencyLabels[p.posting_frequency || ""] || defaults.frequency,
       customFrequency: p.custom_posts_per_week || 4,
       language: languageLabels[p.language] || "English",
-      instructions: p.custom_instructions || "",
+      instructions: p.custom_instructions || suggested.instructions || "",
     },
-    onboarding: {
-      step: Math.min(4, g.completed_steps.length),
-      currentStep: steps.indexOf(g.current_step),
-      completed: g.status === "completed",
-    },
+    onboarding: onboardingState(g, b.is_confirmed),
   };
+}
+
+export function onboardingState(progress: CompanyBundle["progress"], confirmed: boolean): DemoState["onboarding"] {
+  const completed = progress.status === "completed";
+  const businessReady = progress.completed_steps.includes("business");
+  const step = completed || confirmed ? 2 : businessReady ? 1 : 0;
+  return { step, currentStep: step, completed };
 }
 export function companyPayload(state: DemoState) {
   const b = state.workspace.company;
@@ -157,6 +233,7 @@ export function companyPayload(state: DemoState) {
     state: text(b.state || ""),
     public_email: text(b.publicEmail || ""),
     public_phone: text(b.publicPhone || ""),
+    office_address: text(b.officeAddress || ""),
     description: text(b.description),
     city: text(b.city ?? location[0] ?? ""),
     country: text(b.country ?? location.slice(1).join(", ")),
@@ -185,6 +262,7 @@ export function brandPayload(state: DemoState) {
   }
   return {
     display_name: b.name.trim(),
+    ...(b.tagline !== undefined ? { tagline: text(b.tagline) } : {}),
     description: text(b.description),
     brand_colors: b.identity.colors,
     brand_voice: b.identity.tones,

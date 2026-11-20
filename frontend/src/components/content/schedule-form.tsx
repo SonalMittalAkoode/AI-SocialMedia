@@ -12,6 +12,7 @@ import {
   scheduleSchema,
   Schedule,
 } from "@/lib/scheduling-api";
+import { AccountAvailability } from "@/components/social-availability";
 
 export function ScheduleForm({
   companyId,
@@ -125,6 +126,7 @@ export function ScheduleForm({
         The platform follows the approved draft. Change it in My Posts and
         approve again to use another platform.
       </p>
+      <AccountAvailability platform={post.platform} />
       <div className="form-grid">
         <Input
           label="Schedule date"

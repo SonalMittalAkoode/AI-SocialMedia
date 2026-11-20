@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.models.onboarding import Workspace, WorkspaceMember, Company, BrandProfile, ContentPreferences, OnboardingProgress
+from app.models.brand_logo import BrandLogo
+from app.services.brand_provenance import website_host
 
 STEPS = ["business", "brand", "competitors", "preferences", "generate"]
 
@@ -106,6 +108,10 @@ def create_company(db, workspace, data):
 
 def invalidate(company, step):
     progress = company.onboarding
+    # Completed simplified onboarding stays complete when CRM details change.
+    # The brand still needs confirmation again before starting new AI jobs.
+    if progress.status == "completed" and progress.first_post is not None:
+        return
     index = STEPS.index(step)
     progress.completed_steps = [s for s in progress.completed_steps if STEPS.index(s) < index]
     progress.demo_steps = [s for s in progress.demo_steps if s in progress.completed_steps]
@@ -124,8 +130,13 @@ def update_company(db, company, data):
     updates = data.model_dump(exclude_unset=True, exclude={"revision", "expected_brand_revision"})
     if updates.get("status") == "active" and company.onboarding.status != "completed":
         raise HTTPException(422, "Complete onboarding before activating this company")
+    website_changed = 'website_url' in updates and website_host(updates['website_url']) != website_host(company.website_url)
     with transaction(db):
-        if assign(company, updates) and company.brand.is_confirmed:
+        imported_logo = db.get(BrandLogo, company.id) if website_changed and company.brand.logo_url else None
+        changed = assign(company, updates)
+        if imported_logo and imported_logo.source_url:
+            company.brand.logo_url = None
+        if changed and (company.brand.is_confirmed or (website_changed and 'brand' in company.onboarding.completed_steps)):
             company.brand.is_confirmed = False
             company.brand.confirmed_at = None
             invalidate(company, "brand")

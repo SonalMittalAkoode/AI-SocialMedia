@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge, Button, Input, Select, Textarea, Empty } from "@/components/ui";
 import {
   PostPreview,
@@ -12,12 +12,50 @@ import { useStore } from "@/store/provider";
 import { mockGeneratePosts, mockSavePost } from "@/lib/mock-api";
 import { Sparkles, Copy, RefreshCw, Check, AlertCircle } from "lucide-react";
 import { RealStudio } from "./real-content";
-export function Studio(props: {
-  onboarding?: boolean;
-  onComplete?: () => void;
+import { getFirstPost, retryFirstPost, type firstPostSchema } from "@/lib/company-api";
+import type { z } from "zod";
+
+type Handoff = z.infer<typeof firstPostSchema>;
+
+export function Studio({ first, newBrief, initialTopic = "", briefCompany }: {
+  first?: boolean; newBrief?: boolean; initialTopic?: string; briefCompany?: string;
 }) {
   const { companyId } = useStore();
-  return <RealStudio key={companyId} {...props} />;
+  const topic = newBrief && companyId === briefCompany ? initialTopic : "";
+  return <CompanyStudio key={`${companyId}:${first}:${newBrief}:${topic}`} companyId={companyId} first={first} newBrief={newBrief} initialTopic={topic} />;
+}
+
+function CompanyStudio({ companyId, first, newBrief, initialTopic }: { companyId: string | null; first?: boolean; newBrief?: boolean; initialTopic: string }) {
+  const [handoff, setHandoff] = useState<Handoff>();
+  const [failedRead, setFailedRead] = useState("");
+  const [retryError, setRetryError] = useState("");
+  const [retrying, setRetrying] = useState(false);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    if (!companyId || newBrief) return;
+    let live = true;
+    getFirstPost(companyId).then((result) => {
+      if (live) { setHandoff(result); setFailedRead(""); }
+    }).catch((error) => { if (live) setFailedRead(error.message); });
+    return () => { live = false; };
+  }, [companyId, newBrief, reload]);
+
+  if (first && companyId && !handoff && !newBrief) return <section className="panel first-post-panel">
+    <h2>Your first post</h2>
+    {failedRead ? <><p role="alert">{failedRead}</p><Button onClick={() => setReload((n) => n + 1)}>Reload first post</Button></>
+      : <p role="status">Finding your first generation request…</p>}
+  </section>;
+  const showFirst = handoff && companyId && ((first && !!handoff.job_id) || handoff.retryable || handoff.pending);
+  if (!showFirst) return <RealStudio initialTopic={initialTopic} />;
+  async function retry(textOnly: boolean) {
+    if (!companyId || !handoff || retrying) return;
+    setRetrying(true);
+    setRetryError("");
+    try { setHandoff(await retryFirstPost(companyId, handoff.job_id, textOnly)); }
+    catch (error) { setRetryError(error instanceof Error ? error.message : "Could not retry the first post."); }
+    finally { setRetrying(false); }
+  }
+  return <RealStudio key={handoff.job_id || "admission"} firstPost={{ ...handoff, retry, retrying, retryError }} />;
 }
 export function DemoStudio({
   onboarding = false,

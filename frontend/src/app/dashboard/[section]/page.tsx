@@ -3,14 +3,18 @@ import { PageHeading } from "@/components/ui";
 import { Studio } from "@/components/content/studio";
 import { Posts } from "@/components/dashboard/posts";
 import { Competitors } from "@/components/competitors";
+import { TrendResearch } from "@/components/dashboard/trend-research";
 import { Calendar } from "@/components/dashboard/calendar";
 import { BrandForm } from "@/components/brand-form";
+import { ContentPreferenceSettings } from "@/components/preferences";
 import { Accounts, Analytics, Settings } from "@/components/dashboard/sections";
 import { Companies } from "@/components/dashboard/companies";
+import { AccountAvailability } from "@/components/social-availability";
 const sections = [
   "content-studio",
   "posts",
   "competitors",
+  "trends",
   "calendar",
   "brand",
   "accounts",
@@ -34,6 +38,11 @@ export default async function Page({
     generation?: string;
     media?: string;
     schedule?: string;
+    social?: string;
+    company?: string;
+    first?: string;
+    new?: string;
+    topic?: string;
   }>;
 }) {
   const { section } = await params;
@@ -47,7 +56,10 @@ export default async function Page({
             title="AI Content Studio"
             description="Generate content using your confirmed brand. Review results and save the drafts you want to keep."
           />
-          <Studio />
+          <AccountAvailability />
+          <Studio first={search.first === "1"} newBrief={search.new === "1"}
+            initialTopic={typeof search.topic === "string" ? search.topic.trim().slice(0, 500) : ""}
+            briefCompany={search.company} />
         </>
       );
     case "posts":
@@ -65,6 +77,8 @@ export default async function Page({
     case "competitors":
       // The workspace renders its own page header and company context.
       return <Competitors />;
+    case "trends":
+      return <TrendResearch />;
     case "calendar":
       return (
         <Calendar
@@ -85,10 +99,17 @@ export default async function Page({
           <div className="panel brand-profile-panel">
             <BrandForm />
           </div>
+          <ContentPreferenceSettings />
         </>
       );
     case "accounts":
-      return <Accounts />;
+      return (
+        <Accounts
+          key={`${search.social}-${search.company}`}
+          outcome={search.social}
+          outcomeCompany={search.company}
+        />
+      );
     case "analytics":
       return <Analytics />;
     case "settings":

@@ -10,7 +10,7 @@ from app.services.extraction_errors import ExtractionError
 Small = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 Detail = Annotated[str, StringConstraints(strip_whitespace=True, max_length=3000)]
 Confidence = Literal["high", "medium", "low"]
-FieldName = Literal["company_name", "industry", "business_type", "description", "tagline", "target_audience", "products_services", "brand_voice", "brand_keywords", "brand_colors", "suggested_brand_colors", "social_links", "city", "state", "country", "public_email", "public_phone", "value_proposition", "content_pillars", "suggested_content_tone"]
+FieldName = Literal["company_name", "industry", "business_type", "description", "tagline", "target_audience", "products_services", "brand_voice", "brand_keywords", "brand_colors", "suggested_brand_colors", "social_links", "city", "state", "country", "public_email", "public_phone", "office_address", "value_proposition", "content_pillars", "suggested_content_tone"]
 
 
 class Evidence(Schema):
@@ -40,6 +40,7 @@ class BrandAnalysis(Schema):
     state: Small | None = None
     public_email: Annotated[str, StringConstraints(max_length=254)] | None = None
     public_phone: Small | None = None
+    office_address: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
     value_proposition: Detail | None = None
     content_pillars: list[Small] = Field(default_factory=list, max_length=10)
     suggested_content_tone: list[Small] = Field(default_factory=list, max_length=10)
@@ -100,6 +101,17 @@ class ApplyFindings(Schema):
     fields: dict[FieldName, str | list[str] | dict[str, str] | None] = Field(min_length=1, max_length=24)
 
 
+GUIDELINE_FIELDS = {"value_proposition", "content_pillars", "suggested_content_tone"}
+
+
+def guideline_line(key, value):
+    return key.replace("_", " ").capitalize() + ": " + (", ".join(value) if isinstance(value, list) else value)
+
+
+def guideline_lines(fields):
+    return [guideline_line(key, fields[key]) for key in GUIDELINE_FIELDS if fields.get(key)]
+
+
 def adapt_approved(data: ApplyFindings, existing_guidelines=""):
     """Only explicitly supplied fields are mapped to compatible existing columns."""
     company, brand = {}, {}
@@ -107,7 +119,7 @@ def adapt_approved(data: ApplyFindings, existing_guidelines=""):
         if key == "company_name":
             company["name"] = value
             brand["display_name"] = value
-        elif key in {"industry", "business_type", "city", "state", "country", "public_email", "public_phone"}:
+        elif key in {"industry", "business_type", "city", "state", "country", "public_email", "public_phone", "office_address"}:
             company[key] = value
         elif key == "description":
             company[key] = value
@@ -118,10 +130,10 @@ def adapt_approved(data: ApplyFindings, existing_guidelines=""):
             brand["brand_colors"] = list(dict.fromkeys(brand.get("brand_colors",[])+value))[:8]
         elif key == "target_audience":
             brand[key] = ", ".join(value) if isinstance(value, list) else value
-        elif key in {"value_proposition", "content_pillars", "suggested_content_tone"}:
+        elif key in GUIDELINE_FIELDS:
             if not isinstance(value, (str, list)) or value is None:
                 raise ValueError("Invalid recommendation")
-            line = key.replace("_", " ").capitalize() + ": " + (", ".join(value) if isinstance(value, list) else value)
+            line = guideline_line(key, value)
             previous = brand.get("content_guidelines", existing_guidelines or "")
             brand["content_guidelines"] = previous if line in previous.splitlines() else (previous + "\n" + line).strip()
         else:

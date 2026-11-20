@@ -1,20 +1,27 @@
 "use client";
 import Link from "next/link";
-import { useMemo } from "react";
-import { ArrowRight, CheckCheck, ExternalLink, ListChecks, Sparkles, Telescope } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowRight, CheckCheck, ExternalLink, ListChecks, Loader2, Sparkles, Telescope } from "lucide-react";
 import { Button } from "@/components/ui";
 import { ACTIVE_JOB, AIJob, RealCompetitor, Research, researchView } from "@/lib/intelligence-api";
 import { ago, Avatar, domainOf, pathOf, EmptyState, Provenance, stageLabel, VerificationStatus, when } from "./shared";
+import { hasCurrentResearch } from "./use-competitor-data";
 
 function JobStatus({ job }: { job: AIJob }) {
   const tone = { queued: "amber", running: "pink", completed: "green", failed: "red", cancelled: "muted" }[job.status];
-  return <span className={`cx-approval cx-tone-${tone}`}>{job.status === "running" ? "Running" : job.status[0].toUpperCase() + job.status.slice(1)}</span>;
+  return <span className={`cx-approval cx-tone-${tone}`}>{job.status === "running" ? "Researching" : job.status[0].toUpperCase() + job.status.slice(1)}</span>;
+}
+
+function LoadingResearch() {
+  return <div className="cx-card cx-discover-loading" role="status"><Loader2 className="ci-spin" size={18} aria-hidden /> Loading competitor research…</div>;
 }
 
 export function ResearchQueue({
   jobs,
   rows,
   busy,
+  canManage,
+  loaded,
   onRetry,
   onCancel,
   onView,
@@ -23,14 +30,24 @@ export function ResearchQueue({
   jobs: AIJob[];
   rows: RealCompetitor[];
   busy: boolean;
+  canManage: boolean;
+  loaded: boolean;
   onRetry: (id: string) => void;
   onCancel: (job: AIJob) => void;
   onView: (row: RealCompetitor) => void;
   onShowCompetitors: () => void;
 }) {
+  const [recentLimit, setRecentLimit] = useState(12);
   const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const active = jobs.filter((j) => ACTIVE_JOB.includes(j.status));
-  const recent = jobs.filter((j) => !ACTIVE_JOB.includes(j.status)).slice(0, 30);
+  const recent = jobs.filter((j) => !ACTIVE_JOB.includes(j.status));
+  const groups = new Map<string, AIJob[]>();
+  for (const job of jobs) if (job.batch_id) {
+    const batch = groups.get(job.batch_id) || [];
+    batch.push(job);
+    groups.set(job.batch_id, batch);
+  }
+  const batches = [...groups].filter(([, batch]) => batch.length > 1).slice(0, 12);
   const row = (job: AIJob) => {
     const competitor = job.target_key ? byId.get(job.target_key) : undefined;
     return (
@@ -44,21 +61,22 @@ export function ResearchQueue({
           </span>
         </div>
         <span className="cx-qtime" title={when(job.created_at) || undefined}>
-          Requested {ago(job.created_at)}
+          {job.created_at && <time dateTime={job.created_at}>Requested {when(job.created_at)}</time>}
+          {job.completed_at && <time dateTime={job.completed_at}>Finished {when(job.completed_at)}</time>}
         </span>
         <JobStatus job={job} />
         <div className="cx-qactions">
-          {job.status === "failed" && competitor && !competitor.removed_at && (
+          {canManage && job.status === "failed" && competitor && !competitor.removed_at && (
             <Button variant="secondary" disabled={busy} onClick={() => onRetry(competitor.id)}>
-              Retry
+              Retry research
             </Button>
           )}
-          {job.status === "completed" && competitor && (
+          {competitor && (
             <Button variant="ghost" onClick={() => onView(competitor)} aria-label={`View insights for ${competitor.name}`}>
-              View insights
+              {job.status === "completed" ? "View insights" : "View details"}
             </Button>
           )}
-          {ACTIVE_JOB.includes(job.status) && (
+          {canManage && ACTIVE_JOB.includes(job.status) && (
             <Button variant="ghost" disabled={busy} onClick={() => onCancel(job)}>
               Cancel
             </Button>
@@ -67,8 +85,28 @@ export function ResearchQueue({
       </li>
     );
   };
+  if (!loaded) return <LoadingResearch />;
   return (
     <div className="cx-stack">
+      <dl className="cx-summary cx-queue-summary" aria-label="Research queue summary">
+        {([["queued", "Queued"], ["running", "Researching"], ["completed", "Completed"], ["failed", "Failed"]] as const).map(([status, label]) => (
+          <div className="cx-metric" key={status}><div><dt>{label}</dt><dd><strong>{jobs.filter((job) => job.status === status).length}</strong></dd></div></div>
+        ))}
+      </dl>
+      {batches.length > 0 && <section className="cx-card" aria-label="Bulk research progress">
+        <div className="cx-section-head"><h2>Bulk research progress</h2></div>
+        <ul className="cx-batches">{batches.map(([id, batch]) => {
+          const completed = batch.filter((job) => job.status === "completed").length;
+          const failed = batch.filter((job) => job.status === "failed").length;
+          const cancelled = batch.filter((job) => job.status === "cancelled").length;
+          const finished = completed + failed + cancelled;
+          return <li key={id}>
+            <strong>Batch requested {ago(batch[batch.length - 1].created_at)}</strong>
+            <span>{finished} of {batch.length} finished · {completed} completed · {failed} failed · {cancelled} cancelled</span>
+            <progress aria-label="Jobs finished in batch" value={finished} max={batch.length} />
+          </li>;
+        })}</ul>
+      </section>}
       <section className="cx-card" aria-label="Research in progress">
         <div className="cx-section-head">
           <h2>In progress</h2>
@@ -89,9 +127,10 @@ export function ResearchQueue({
         <section className="cx-card" aria-label="Recent research">
           <div className="cx-section-head">
             <h2>Recent research</h2>
-            <span className="cx-muted">{recent.length} most recent</span>
+            <span className="cx-muted">Showing {Math.min(recent.length, recentLimit)} of {recent.length}</span>
           </div>
-          <ul className="cx-queue">{recent.map(row)}</ul>
+          <ul className="cx-queue">{recent.slice(0, recentLimit).map(row)}</ul>
+          {recent.length > recentLimit && <Button variant="secondary" onClick={() => setRecentLimit(recentLimit + 12)}>Show more research</Button>}
         </section>
       )}
     </div>
@@ -101,12 +140,16 @@ export function ResearchQueue({
 export function ApprovedInsights({
   rows,
   latest,
+  eligibleIds,
+  loaded,
   onView,
   onReview,
   onResearch,
 }: {
   rows: RealCompetitor[];
   latest: Map<string, Research>;
+  eligibleIds: string[];
+  loaded: boolean;
   onView: (row: RealCompetitor) => void;
   onReview: () => void;
   onResearch: () => void;
@@ -114,16 +157,17 @@ export function ApprovedInsights({
   const live = rows.filter((r) => !r.removed_at);
   const approved = live.filter((r) => r.selection_status === "approved");
   const researched = approved.filter((r) => latest.has(r.id));
-  const informing = researched.filter((r) => ["verified", "partially_verified"].includes(r.verification_status));
-  const views = researched.map((r) => ({ row: r, view: researchView(latest.get(r.id)!), research: latest.get(r.id)! }));
+  const informing = approved.filter((r) => eligibleIds.includes(r.id));
+  const views = researched.filter((r) => eligibleIds.includes(r.id)).map((r) => ({ row: r, view: researchView(latest.get(r.id)!), research: latest.get(r.id)! }));
   const count = new Map<string, number>();
   views.forEach(({ view }) => view.themes.forEach((t) => count.set(t, (count.get(t) || 0) + 1)));
   const themes = [...count].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
+  if (!loaded) return <LoadingResearch />;
   if (!live.some((r) => r.last_researched_at))
     return (
       <div className="cx-card">
-        <EmptyState icon={Telescope} title="Turn competitors into insights." description="Research your saved competitors to understand their business and identify relevant content opportunities.">
+        <EmptyState icon={Telescope} title="Turn competitors into insights." description="Research your saved competitors to discover meaningful business and content insights.">
           <Button onClick={onResearch}>Research competitors</Button>
         </EmptyState>
       </div>
@@ -131,7 +175,7 @@ export function ApprovedInsights({
   if (!approved.length)
     return (
       <div className="cx-card">
-        <EmptyState icon={ListChecks} title="Curate your competitive intelligence." description="Review and approve researched competitors to make relevant insights available for AI content generation.">
+        <EmptyState icon={ListChecks} title="Curate your competitive intelligence." description="Review and approve relevant competitors to improve your content strategy.">
           <Button onClick={onReview}>Review competitors</Button>
         </EmptyState>
       </div>
@@ -143,13 +187,13 @@ export function ApprovedInsights({
           <h2>
             {informing.length} approved competitor{informing.length === 1 ? "" : "s"} inform{informing.length === 1 ? "s" : ""} your AI content
           </h2>
-          <p>New generations in AI Content Studio use these approved findings to differentiate your brand. Competitors are never named in posts. Opening the studio does not start a generation.</p>
+          <p>AI Content Studio uses eligible approved research to help differentiate your brand.</p>
         </div>
-        <Button asChild>
+        {informing.length ? <Button asChild>
           <Link href="/dashboard/content-studio">
             <Sparkles size={14} /> Create content with these insights <ArrowRight size={14} />
           </Link>
-        </Button>
+        </Button> : <Button disabled>Create content with these insights</Button>}
       </section>
       {approved.length > researched.length && (
         <p className="cx-info cx-info-warn">
@@ -172,8 +216,9 @@ export function ApprovedInsights({
                 <div>
                   <strong>{r.name}</strong>
                   <span>
-                    {r.last_researched_at ? `Relevance ${r.relevance_score}/100 (heuristic)` : "Not researched yet"} · {domainOf(r.website_url)}
+                    {hasCurrentResearch(r) ? `Relevance ${r.relevance_score}/100 (heuristic)` : "Current website needs research"} · {domainOf(r.website_url)}
                   </span>
+                  <span>{eligibleIds.includes(r.id) ? "Eligible for AI content" : "Currently ineligible for AI content"}</span>
                   {v?.positioning && (
                     <p>
                       <Provenance kind="interpretation" /> {v.positioning}
@@ -188,6 +233,11 @@ export function ApprovedInsights({
             );
           })}
         </ul>
+      </section>
+      <section className="cx-card" aria-label="Verification limitations">
+        <div className="cx-section-head"><h2>Verification limitations</h2></div>
+        <p className="cx-muted">Website research reflects what the business publishes. Partial verification means its identity could only be partly confirmed. Strategic suggestions need editorial review.</p>
+        {views.some(({ view }) => view.warnings.length) && <ul className="cx-dlist">{views.flatMap(({ row, view }) => view.warnings.map((note, index) => <li key={`${row.id}-${index}`}>{row.name}: {note}</li>))}</ul>}
       </section>
       <div className="cx-two-col">
         <section className="cx-card" aria-label="Common content themes">
@@ -250,15 +300,15 @@ export function ApprovedInsights({
           <Provenance kind="verified" />
         </div>
         <ul className="cx-evidence cx-evidence-compact">
-          {views.map(({ row, view, research }) => (
+          {views.map(({ row, research }) => (
             <li key={row.id}>
               <span className="cx-evidence-field">{row.name}</span>
-              <p>{view.services.length ? `Offerings found on the website: ${view.services.join(", ")}.` : "No offerings captured."}</p>
-              {[...new Set(research.source_evidence.map((e) => e.source_url).filter(Boolean) as string[])].slice(0, 3).map((url) => (
-                <a key={url} href={url} target="_blank" rel="noopener noreferrer">
-                  {domainOf(url)}
-                  {pathOf(url)} <ExternalLink size={11} aria-hidden />
-                </a>
+              {research.source_evidence.filter((e) => e.classification === "explicit" && e.source_url).slice(0, 3).map((e, index) => (
+                <p key={index}>
+                  {e.value}{" "}<a href={e.source_url!} target="_blank" rel="noopener noreferrer">
+                    {domainOf(e.source_url!)}{pathOf(e.source_url!)} <ExternalLink size={11} aria-hidden />
+                  </a>
+                </p>
               ))}
             </li>
           ))}

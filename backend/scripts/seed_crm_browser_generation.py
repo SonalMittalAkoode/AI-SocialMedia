@@ -26,11 +26,20 @@ def main():
         draft = {'title': 'CRM browser recovery fixture', 'platform': 'LinkedIn', 'content_type': 'text',
             'caption': 'A retained browser test result. No AI provider was called.', 'hashtags': [],
             'hook': '', 'call_to_action': '', 'image_prompt': '', 'slides': []}
+        posts = [draft]
+        if '--first-post' in sys.argv:
+            posts = [
+                {**draft, 'platform': 'Instagram', 'title': f'Meet {company.brand.display_name}',
+                 'caption': 'Good coffee starts with careful roasting. Meet the neighbourhood team behind our small-batch beans and seasonal tastings.',
+                 'hashtags': ['#SmallBatchCoffee', '#CoffeeRoasting'], 'hook': 'Meet the team behind your morning coffee.'},
+                {**draft, 'platform': 'LinkedIn', 'title': f'Introducing {company.brand.display_name}',
+                 'caption': 'Our small-batch approach gives each coffee room to develop its own character. We bring that same care to the seasonal tastings we host for our community.'},
+            ]
         job = AIJob(company_id=company_id, requested_by=user.id, kind='content_generation', request_key=uuid4(),
             status='completed', stage='completed', model_identifier='browser-test-fixture-no-provider',
             completed_at=datetime.now(timezone.utc),
             payload={'request': {'topic': draft['title']}, 'context': {'brand_revision': company.brand.revision}},
-            result={'posts': [draft], 'strategy': {}, 'warnings': ['Test fixture; no provider call']})
+            result={'posts': posts, 'strategy': {}, 'warnings': ['Test fixture; no provider call']})
         db.add(job); db.commit()
         print(json.dumps({'job_id': str(job.id), 'title': draft['title']}))
 

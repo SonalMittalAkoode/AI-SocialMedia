@@ -1,10 +1,10 @@
 import { ReactNode } from "react";
 import { Button } from "@/components/ui";
 import { stateLabel } from "@/lib/scheduling-api";
-export function Status({ value }: { value: string }) {
+export function Status({ value, label }: { value: string; label?: string }) {
   return (
     <span className={`crm-status crm-status-${value}`}>
-      {stateLabel(value)}
+      {label ?? stateLabel(value)}
     </span>
   );
 }

@@ -1,0 +1,356 @@
+/* Phase 8A Social Accounts — uses the existing dark/pink/lime SocialAI palette. */
+.social-page {
+  display: grid;
+  gap: 22px;
+}
+.social-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  margin-bottom: 18px;
+}
+.social-page .social-notice {
+  margin-bottom: 0;
+}
+.social-notice p {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.social-notice > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.social-notice-success {
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: color-mix(in srgb, var(--success) 5%, transparent);
+  color: var(--success-text);
+}
+.social-notice-error {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  color: var(--danger-text);
+}
+.social-notice-info {
+  border-color: color-mix(in srgb, var(--info) 40%, transparent);
+  background: color-mix(in srgb, var(--info) 6%, transparent);
+  color: var(--info-text);
+}
+.social-section .crm-section-head {
+  margin-bottom: 8px;
+}
+.social-count {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.social-empty {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin: 6px 0 2px;
+}
+.social-account-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.social-account-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(200px, 1.2fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.social-account-row:last-child {
+  border-bottom: 0;
+}
+.social-account-identity,
+.social-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.social-account-identity strong,
+.social-card-identity strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.social-account-identity span,
+.social-card-identity span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.social-avatar {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.social-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary-text);
+  font-weight: 700;
+}
+.social-account-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.social-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.social-account-actions .button {
+  min-height: 34px;
+  padding: 6px 11px;
+  font-size: 12px;
+}
+.social-status {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 10px;
+  color: var(--foreground-soft);
+  white-space: nowrap;
+  line-height: 1.6;
+}
+.social-status-connected {
+  color: var(--success-text);
+  background: color-mix(in srgb, var(--success) 5%, transparent);
+  border-color: color-mix(in srgb, var(--success) 25%, transparent);
+}
+.social-status-limited {
+  color: var(--warning-text);
+  background: color-mix(in srgb, var(--warning) 5%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+.social-status-reconnect_required,
+.social-status-error {
+  color: var(--danger-text);
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.social-status-disconnected {
+  color: var(--muted-foreground);
+  background: var(--muted);
+}
+.social-heading {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: normal;
+  margin: 4px 0 14px;
+}
+.social-logo-x {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.social-platform-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.social-platform-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.social-platform-card h3 {
+  font-size: 18px;
+  margin: 12px 0 0;
+  letter-spacing: -0.3px;
+}
+.social-platform-card p {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin: 0;
+  max-width: 440px;
+}
+.social-platform-card small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.social-platform-linkedin {
+  grid-row: span 3;
+  border-color: color-mix(in srgb, var(--info) 40%, transparent);
+}
+.social-platform-inactive {
+  opacity: 0.72;
+}
+.social-platform-inactive h3 {
+  font-size: 15px;
+}
+.social-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 17%, transparent);
+  color: var(--foreground);
+}
+.social-logo-linkedin {
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  border-color: color-mix(in srgb, var(--info) 40%, transparent);
+  color: var(--info-text);
+}
+.social-logo-instagram {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 33%, transparent);
+  color: var(--primary-text);
+}
+.social-logo-facebook {
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  border-color: color-mix(in srgb, var(--info) 33%, transparent);
+  color: var(--info-text);
+}
+.social-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 2px 0 4px;
+}
+.social-capabilities li {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground-soft);
+}
+.social-config {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--warning-text);
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+  background: color-mix(in srgb, var(--warning) 5%, transparent);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.social-config ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+.social-link-button {
+  align-self: flex-start;
+  font-size: 11px;
+}
+.social-scope-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+.social-scope-note > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.social-modal-text {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin: 0 0 16px;
+}
+.social-details {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+.social-details > div {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.social-details dt {
+  color: var(--muted-foreground);
+}
+.social-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.social-availability {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--foreground-soft);
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin: 0 0 14px;
+}
+.social-availability > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.social-availability a {
+  color: var(--primary-text);
+}
+.sidebar-count {
+  margin-left: auto;
+  font-size: 10px;
+  min-width: 18px;
+  text-align: center;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+@media (max-width: 1000px) {
+  .social-account-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .social-account-actions {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 760px) {
+  .social-platform-grid {
+    grid-template-columns: 1fr;
+  }
+  .social-platform-linkedin {
+    grid-row: auto;
+  }
+  .social-details > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}

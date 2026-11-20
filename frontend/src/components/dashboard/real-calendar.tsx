@@ -31,6 +31,7 @@ import {
   calendarDays,
 } from "@/lib/scheduling-api";
 import { ScheduleForm } from "@/components/content/schedule-form";
+import { AccountAvailability } from "@/components/social-availability";
 
 function ApprovedPicker({
   companyId,
@@ -449,6 +450,7 @@ export function RealCalendar({
         Company schedules are saved here. Publishing integration is not
         connected yet; due posts wait for a publisher.
       </div>
+      <AccountAvailability />
       {error && <p role="alert">{error}</p>}
       <div className="wrap-actions">
         <Button

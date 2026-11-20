@@ -13,15 +13,18 @@ export interface BrandIdentity {
   logo: string;
 }
 export interface CompanyProfile {
+  tagline?: string;
   name: string;
   website: string;
   industry: string;
+  brandSource?: string;
   businessType?: string;
   state?: string;
   city?: string;
   country?: string;
   publicEmail?: string;
   publicPhone?: string;
+  officeAddress?: string;
   keywords?: string;
   description: string;
   location: string;

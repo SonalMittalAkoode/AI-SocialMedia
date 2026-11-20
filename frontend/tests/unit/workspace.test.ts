@@ -24,7 +24,7 @@ describe("resumable onboarding and storage", () => {
     state.posts[0].caption = "An edited caption";
     const restored = parseState(serializeState(state));
     expect(restored).toEqual(state);
-    expect(onboardingPath(restored)).toBe("/onboarding/preferences");
+    expect(onboardingPath(restored)).toBe("/onboarding/goals");
   });
   it("recovers from invalid JSON and unsupported storage versions", () => {
     expect(parseState("{broken")).toEqual(initialState());

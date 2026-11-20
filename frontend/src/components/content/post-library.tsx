@@ -45,6 +45,7 @@ import {
   Skeleton,
   Pager,
 } from "@/components/dashboard/crm-ui";
+import { AccountAvailability } from "@/components/social-availability";
 
 const blank: Draft = {
   title: "",
@@ -384,6 +385,7 @@ export function PostLibrary({
           </div>
         }
       />
+      <AccountAvailability />
       <div
         className="crm-tabs"
         role="tablist"
@@ -746,7 +748,7 @@ export function PostLibrary({
             </>
           )}
           <details className="crm-import">
-            <summary>Recover browser demo drafts</summary>
+            <summary>Recover drafts saved in this browser</summary>
             <p className="muted">
               Import draft text into the selected company. Browser drafts are
               retained; repeated imports reuse the existing records.
@@ -756,7 +758,7 @@ export function PostLibrary({
               disabled={importing || !companyId}
               onClick={importDrafts}
             >
-              {importing ? "Importing…" : "Import browser demo drafts"}
+              {importing ? "Importing…" : "Import browser drafts"}
             </Button>
           </details>
         </>

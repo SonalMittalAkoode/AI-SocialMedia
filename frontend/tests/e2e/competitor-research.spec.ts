@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { mkdirSync } from "node:fs";
 import { signInWorkspace, apiURL } from "./auth-helpers";
 
 // Grounded answer fixture (provider mocked). Research findings come from a labelled
@@ -25,20 +26,32 @@ const answer = {
 };
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth <= 1);
+const screenshotRoot = "artifacts/phase-7.7";
+const viewports = [[1920], [1440, "desktop"], [1024], [768, "tablet"], [390, "mobile"], [375]] as const;
+async function capture(page: Page, view: string, fullPage = true) {
+  mkdirSync(screenshotRoot, { recursive: true });
+  for (const [width, label] of viewports) {
+    await page.setViewportSize({ width, height: width >= 1000 ? 1000 : 900 });
+    expect(await noOverflow(page)).toBe(true);
+    if (label) await page.screenshot({ path: `${screenshotRoot}/${view}-${label}.png`, fullPage });
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+}
 
 test("competitor intelligence workspace: discovery, watchlist, drawer, queue and insights", async ({ page }) => {
+  test.setTimeout(90_000);
   const { companyId, id } = await signInWorkspace(page);
   await page.route("**/competitor-search", (route) => route.fulfill({ json: answer }));
   await page.goto("/dashboard/competitors");
 
   // Header, real company context and zero-state metrics.
-  await expect(page.getByRole("heading", { name: "Know your competition. Stay ahead.", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Competitor Intelligence", level: 1 })).toBeVisible();
   const summary = page.getByLabel("Competitor summary");
   for (const label of ["Saved competitors", "Researched competitors", "Approved competitors", "Research in progress"])
     await expect(summary.locator(".cx-metric", { hasText: label }).locator("strong")).toHaveText("0");
   await expect(page.getByRole("tab", { name: /Discover/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Your competitive landscape awaits.")).toBeVisible();
-  await expect(page.getByText(/Search suggestions are for reference and are not automatically saved or researched/)).toBeVisible();
+  await expect(page.getByText("Discovery suggestions are for reference only. Independently sourced competitors can be added and researched separately.")).toBeVisible();
 
   // Empty states in the other tabs.
   await page.getByRole("tab", { name: /My Competitors/ }).click();
@@ -65,14 +78,14 @@ test("competitor intelligence workspace: discovery, watchlist, drawer, queue and
   await expect(page.frameLocator('iframe[title="Google Search Suggestions"]').getByRole("link", { name: "coffee roasters" })).toBeVisible();
   await expect(result.getByRole("button", { name: /import|approve|research|save/i })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: /Discover/ }).locator(".cx-count")).toHaveText("2");
-  await page.screenshot({ path: "artifacts/competitor-discover-desktop.png", fullPage: true });
+  await capture(page, "discover");
 
   // Bulk add independently sourced competitors (research off: no quota).
   await page.getByRole("button", { name: "Add competitor", exact: true }).first().click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("tab", { name: "Bulk add" }).click();
-  await dialog.getByLabel("Research automatically after saving (uses Gemini quota)").uncheck();
-  await dialog.getByLabel("Competitors, one per line (Name, https://website)").fill("Fixture Roasters, https://www.iana.org\nRestricted Fixture, https://business.org");
+  await dialog.getByLabel("Research automatically after saving (uses AI quota)").uncheck();
+  await dialog.getByLabel("Competitors, one per line (Name, https://website)").fill("Fixture Roasters, https://www.iana.org\nRestricted Fixture, https://research-fixture-7b38f53b8b9d.iana.org");
   await dialog.getByRole("button", { name: "Save 2 competitors" }).click();
   await expect(dialog.getByText("created", { exact: true })).toHaveCount(2);
   await dialog.getByRole("button", { name: "Done" }).click();
@@ -109,19 +122,23 @@ test("competitor intelligence workspace: discovery, watchlist, drawer, queue and
   await page.getByRole("button", { name: "Table view" }).click();
   await expect(page.getByRole("table").getByRole("heading", { name: "Restricted Fixture" })).toBeVisible();
   await page.getByRole("button", { name: "Grid view" }).click();
-  await page.screenshot({ path: "artifacts/competitor-intelligence-desktop.png", fullPage: true });
+  await capture(page, "my-competitors");
 
   // Details drawer with provenance labels and sticky actions.
   await card.getByRole("button", { name: "View insights for Fixture Roasters" }).click();
   const drawer = page.getByRole("dialog", { name: "Fixture Roasters" });
-  for (const section of ["Overview", "Competitive relevance", "Key strengths", "Content strategy", "Supporting evidence (1)", "Research information"])
+  for (const section of ["Company Overview", "Competitive Relevance", "Competitive Strengths", "Content Intelligence", "Supporting evidence (1)", "Research History"])
     await expect(drawer.getByRole("heading", { name: section })).toBeVisible();
   await expect(drawer.getByText("Show your roasting process step by step")).toBeVisible();
   await expect(drawer.getByText(/Based on the website: “Single-origin beans”/)).toBeVisible();
   await expect(drawer.getByText("AI interpretation").first()).toBeVisible();
   await expect(drawer.getByText("Strategic suggestion").first()).toBeVisible();
   await expect(drawer.getByText(/never estimated/)).toBeVisible();
-  await page.screenshot({ path: "artifacts/competitor-drawer-desktop.png" });
+  await capture(page, "details-drawer", false);
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "View insights for Fixture Roasters" })).toBeFocused();
+  await card.getByRole("button", { name: "View insights for Fixture Roasters" }).click();
   await drawer.getByRole("button", { name: "Approve competitor" }).click();
   await expect(drawer.getByText("Approved", { exact: true })).toBeVisible();
   await drawer.getByRole("button", { name: "Close dialog" }).click();
@@ -131,21 +148,36 @@ test("competitor intelligence workspace: discovery, watchlist, drawer, queue and
   await page.getByRole("menuitem", { name: "Remove competitor" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Remove competitor" }).click();
   await expect(page.getByRole("article", { name: "Restricted Fixture" })).toHaveCount(0);
-  await page.getByLabel("Approval status").selectOption("removed");
+  await page.getByLabel("Record status").selectOption("removed");
   await page.getByRole("button", { name: "Actions for Restricted Fixture" }).click();
   await page.getByRole("menuitem", { name: "Restore competitor" }).click();
   await page.getByRole("button", { name: "Clear filters" }).first().click();
   await expect(page.getByRole("article", { name: "Restricted Fixture" })).toBeVisible();
 
   // Real bulk research through the live worker; progress survives reload.
+  const second = await page.request.post(`${apiURL}/companies/${companyId}/competitors`, {
+    headers: { Origin: "http://localhost:3000" },
+    data: { name: "Second DNS Fixture", website_url: "https://research-fixture-2-f17010437009.iana.org" },
+  });
+  expect(second.status()).toBe(201);
+  await page.reload();
   await page.getByLabel("Select Restricted Fixture").check();
-  await page.getByRole("button", { name: "Research selected (1)" }).click();
+  await page.getByLabel("Select Second DNS Fixture").check();
+  const admitted = page.waitForResponse((response) => response.url().endsWith("/competitors/research-batch") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Research selected (2)" }).click();
+  expect((await admitted).status()).toBe(202);
   await page.reload();
   await page.getByRole("tab", { name: /Research Queue/ }).click();
   const queueRow = page.locator(".cx-qrow", { hasText: "Restricted Fixture" }).first();
   await expect(queueRow).toBeVisible();
-  await expect(queueRow.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 120000 });
+  await expect(queueRow.getByRole("button", { name: "Retry research" })).toBeVisible({ timeout: 120000 });
   await expect(queueRow.getByText("Failed", { exact: true })).toBeVisible();
+  await expect(queueRow.getByText(/Finished /)).toBeVisible();
+  await expect(page.getByLabel("Bulk research progress")).toContainText("2 of 2 finished");
+  await capture(page, "research-queue");
+  await page.setViewportSize({ width: 768, height: 900 });
+  expect((await queueRow.locator(".cx-qmain").boundingBox())!.width).toBeGreaterThan(140);
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   // Approved insights.
   await page.getByRole("tab", { name: /Approved Insights/ }).click();
@@ -154,36 +186,85 @@ test("competitor intelligence workspace: discovery, watchlist, drawer, queue and
   await expect(page.getByLabel("Common content themes")).toContainText("Brewing guides");
   await expect(page.getByLabel("Content opportunities")).toContainText("From research on Fixture Roasters");
   await expect(page.getByLabel("Supporting evidence")).toContainText("Single-origin beans");
+  await capture(page, "approved-insights");
+  let generationRequests = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/content-generations")) generationRequests++;
+  });
+  await page.getByRole("link", { name: /Create content with these insights/ }).click();
+  await expect(page).toHaveURL(/\/dashboard\/content-studio$/);
+  // Phase 8A.1 renamed the Studio panel heading to "Creative brief".
+  await expect(page.getByRole("heading", { name: "Creative brief" })).toBeVisible();
+  expect(generationRequests).toBe(0);
+  await page.goBack();
 
   // Responsive layouts.
-  for (const [width, name] of [[768, "tablet"], [375, "mobile"]] as const) {
+  for (const width of [1920, 1440, 1024, 768, 390, 375]) {
     await page.setViewportSize({ width, height: 900 });
     await page.getByRole("tab", { name: /My Competitors/ }).click();
     await expect(page.getByRole("article", { name: "Fixture Roasters" })).toBeVisible();
     expect(await noOverflow(page)).toBe(true);
-    await page.screenshot({ path: `artifacts/competitor-intelligence-${name}.png`, fullPage: true });
+    await page.getByRole("button", { name: "Table view" }).click();
+    expect(await noOverflow(page)).toBe(true);
+    await page.getByRole("button", { name: "Grid view" }).click();
   }
   await page.getByRole("button", { name: "View insights for Fixture Roasters" }).click();
   const box = await page.getByRole("dialog", { name: "Fixture Roasters" }).boundingBox();
   expect(Math.round(box!.width)).toBe(375);
-  await page.screenshot({ path: "artifacts/competitor-drawer-mobile.png" });
 });
 
-test("onboarding step uses the simplified competitor workspace and optional navigation", async ({ page }) => {
+test("watchlist filters and paginates records beyond the first API page", async ({ page }) => {
+  const { companyId } = await signInWorkspace(page);
+  const rows = Array.from({ length: 103 }, (_, i) => ({
+    id: `31bbd68b-628c-44a6-8681-${String(i).padStart(12, "0")}`,
+    company_id: companyId,
+    name: `Pagination fixture ${String(i).padStart(3, "0")}`,
+    website_url: "https://example.org/",
+    industry: "Test industry",
+    description: null,
+    selection_status: "suggested",
+    verification_status: i === 100 ? "unverified" : "verified",
+    relevance_score: i % 100,
+    relevance_reason: "Test score",
+    source_provider: "manual",
+    source_url: "https://example.org/",
+    revision: 1,
+    last_researched_at: "2026-01-01T00:00:00Z",
+    city: "Test city",
+    country: "Test country",
+    removed_at: i === 102 ? "2026-01-02T00:00:00Z" : null,
+  }));
+  await page.route(`**/companies/${companyId}/competitors?*`, (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const offset = Number(params.get("offset") || 0);
+    return route.fulfill({ json: rows.slice(offset, offset + Number(params.get("limit"))) });
+  });
+  await page.goto("/dashboard/competitors");
+  await page.getByRole("tab", { name: /My Competitors/ }).click();
+  await expect(page.getByRole("navigation", { name: "Competitor pages" })).toContainText("1–12 of 102");
+  await page.getByLabel("Sort competitors").selectOption("lowest");
+  await expect(page.locator("article.cx-comp h3").first()).toHaveText("Pagination fixture 000");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "Competitor pages" })).toContainText("13–24 of 102");
+  await page.getByLabel("Search competitors").fill("101");
+  await expect(page.getByRole("article", { name: "Pagination fixture 101" })).toBeVisible();
+  await page.getByLabel("Relevance range").selectOption("70-100");
+  await expect(page.getByText("No matching competitors.")).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).first().click();
+  await page.getByLabel("Search competitors").fill("100");
+  await expect(page.getByRole("article", { name: "Pagination fixture 100" }).locator(".cx-relevance")).toContainText("Not researched");
+  await page.getByLabel("Search competitors").clear();
+  await page.getByLabel("Record status").selectOption("removed");
+  await expect(page.getByRole("article", { name: "Pagination fixture 102" })).toBeVisible();
+});
+
+test("legacy competitor onboarding links return to the completed workspace", async ({ page }) => {
   await signInWorkspace(page);
-  await page.route("**/competitor-search", (route) => route.fulfill({ json: answer }));
   await page.goto("/onboarding/competitors");
-  await expect(page.getByRole("heading", { name: "Know your competition. Stay ahead.", level: 1 })).toBeVisible();
-  await expect(page.getByRole("tab")).toHaveText([/Discover/, /My Competitors/]);
-  await expect(page.getByLabel("Competitor summary")).toHaveCount(0);
-  await page.getByRole("button", { name: "Discover competitors", exact: true }).click();
-  await expect(page.getByRole("article", { name: "Google grounded search results" }).locator(".gm-section")).toHaveCount(2);
-  for (const label of ["Back to brand identity", "Skip for now", "Continue to preferences"])
-    await expect(page.getByRole("button", { name: label })).toBeVisible();
-  await page.screenshot({ path: "artifacts/competitor-onboarding-desktop.png", fullPage: true });
-  await page.setViewportSize({ width: 375, height: 900 });
-  expect(await noOverflow(page)).toBe(true);
-  await page.screenshot({ path: "artifacts/competitor-onboarding-mobile.png", fullPage: true });
-  await page.getByRole("button", { name: "Skip for now" }).click();
-  await expect(page).toHaveURL(/onboarding\/preferences/);
+  await expect(page).toHaveURL("/dashboard");
+  const checklist = page.getByRole("region", { name: "Setup checklist" });
+  await checklist.getByRole("button", { name: "Checklist", exact: true }).click();
+  await checklist.getByRole("link", { name: /Discover competitors/ }).click();
+  await expect(page).toHaveURL("/dashboard/competitors");
+  await expect(page.getByRole("button", { name: "Discover competitors", exact: true })).toBeVisible();
 });

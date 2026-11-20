@@ -11,12 +11,13 @@ from app.core.intelligence_config import ai_settings
 from app.models.content import Post,PostAsset,PostVersion
 from app.models.intelligence import AIJob
 from app.schemas.content import (GenerationRequest,PostCreate,PostUpdate,PostResponse,RevisionRequest,ContentDraft,
-    RegenerateRequest,ImageRequest,PrimaryAssetRequest)
+    RegenerateRequest,ImageRequest,PrimaryAssetRequest,AssetReview)
 from app.schemas.intelligence import AIJobResponse,JobRequest
-from app.services import ai_queue, post_media
+from app.services import ai_queue, brand_social, post_media
 from app.services.content_generation import context_for
 from app.services.extraction_errors import ExtractionError
 from app.services.onboarding import transaction,check_revision
+from app.services.extraction_jobs import now
 
 router=APIRouter(prefix='/companies/{company_id}',tags=['Content'],dependencies=[Depends(request_policy)])
 
@@ -31,9 +32,13 @@ def post_access(db,company_id,post_id):
 def start(company_id:UUID,data:GenerationRequest,user=Depends(current_user),db=Depends(storage)):
     company=company_access(db,user,company_id,True)
     if len(data.platforms)>ai_settings.max_posts:raise HTTPException(422,'Too many posts requested')
-    payload={'context':context_for(db,company),'request':data.model_dump(exclude={'request_key'})}
+    context = context_for(db, company)
+    if profile := brand_social.manual_profile(data.published_caption_examples):
+        context['published_social_style'] = [profile]
+    payload={'context':context,'request':data.model_dump(exclude={'request_key','published_caption_examples'})}
     # Reserve capacity now for the per-result image jobs the worker will queue after the text.
-    extra=len(data.platforms) if data.include_images and ai_settings.gemini_image_model else 0
+    from app.services import ai_provider
+    extra=len(data.platforms) if data.include_images and ai_provider.image_configured() else 0
     return ai_queue.enqueue(db,company,user,'content_generation',data.request_key,payload,extra_capacity=extra)
 
 
@@ -53,9 +58,11 @@ def result(company_id:UUID,job_id:UUID,user=Depends(current_user),db=Depends(sto
 def generation_media(company_id:UUID,job_id:UUID,user=Depends(current_user),db=Depends(storage)):
     """Images and image-job states for each result of one generation (saved or not)."""
     company_access(db,user,company_id);job=job_access(db,company_id,job_id,'content_generation')
-    assets=db.scalars(select(PostAsset).where(PostAsset.company_id==company_id,PostAsset.generation_job_id==job.id).order_by(PostAsset.created_at)).all()
     prefix=f'{job.id}:'
     jobs=db.scalars(select(AIJob).where(AIJob.company_id==company_id,AIJob.kind=='image_generation',AIJob.target_key.startswith(prefix,autoescape=True)).order_by(AIJob.created_at)).all()
+    # The worker commits completion and its asset together. Read job state first so
+    # a commit between these reads cannot produce a completed job with no image.
+    assets=db.scalars(select(PostAsset).where(PostAsset.company_id==company_id,PostAsset.generation_job_id==job.id).order_by(PostAsset.created_at)).all()
     return {'assets':[post_media.asset_view(a) for a in assets],
             'jobs':[{**AIJobResponse.model_validate(j).model_dump(mode='json'),'result_index':int(j.target_key.split(':')[1]),'aspect_ratio':j.payload.get('aspect_ratio')} for j in jobs]}
 
@@ -65,7 +72,26 @@ def result_image(company_id:UUID,job_id:UUID,index:int,data:ImageRequest,user=De
     """Generate or regenerate the image for an unsaved result; earlier images are kept."""
     company=company_access(db,user,company_id,True);job=job_access(db,company_id,job_id,'content_generation')
     if not 0<=index<=2:raise HTTPException(422,'Invalid generation result')
-    return post_media.enqueue_result_image(db,company,user,job,index,data.request_key,data.aspect_ratio,data.instructions)
+    return post_media.enqueue_result_image(db,company,user,job,index,data.request_key,data.aspect_ratio,data.instructions,
+                                           data.operation,data.parent_asset_id,data.options.model_dump() if data.options else None)
+
+
+@router.post('/content-generations/{job_id}/results/{index}/caption',response_model=AIJobResponse,status_code=202)
+def result_caption(company_id:UUID,job_id:UUID,index:int,data:RegenerateRequest,user=Depends(current_user),db=Depends(storage)):
+    """New caption, hook, CTA and hashtags for an unsaved result. Nothing is overwritten: the
+    Studio shows the suggestion and the user decides whether to apply it. No images are generated."""
+    company=company_access(db,user,company_id,True);job=job_access(db,company_id,job_id,'content_generation')
+    if job.status!='completed' or not 0<=index<len(job.result.get('posts',[])):raise HTTPException(422,'Invalid generation result')
+    draft=job.result['posts'][index];original=job.payload.get('request',{})
+    instructions=f"{CAPTION_ONLY} Current caption (do not repeat): {draft['caption'][:600]} Visual concept to keep: {draft.get('image_prompt','')[:400]}"
+    if data.instructions:instructions+=f' User direction: {data.instructions}'
+    request={'platforms':[draft['platform']],'content_type':draft['content_type'],'topic':draft['title'],'instructions':instructions[:1500],
+             'regenerate_mode':'caption','source_result':f'{job.id}:{index}'}
+    request.update({k:original[k] for k in ('objective','audience','tone','campaign','evidence') if original.get(k)})
+    context = context_for(db, company)
+    if profiles := job.result.get('strategy', {}).get('published_social_style'):
+        context['published_social_style'] = profiles
+    return ai_queue.enqueue(db,company,user,'content_generation',data.request_key,{'context':context,'request':request})
 
 
 @router.get('/posts',response_model=list[PostResponse])
@@ -119,6 +145,9 @@ def edit(company_id:UUID,post_id:UUID,data:PostUpdate,user=Depends(current_user)
 def approve(company_id:UUID,post_id:UUID,data:RevisionRequest,user=Depends(current_user),db=Depends(storage)):
     company_access(db,user,company_id,True);post=post_access(db,company_id,post_id);check_revision(post,data.revision)
     if post.status=='archived':raise HTTPException(422,'Restore before approving')
+    if post.primary_asset_id:
+        primary=db.get(PostAsset,post.primary_asset_id)
+        if primary and primary.review_decision=='rejected':raise HTTPException(422,'The chosen image was rejected. Choose another image or make the post text-only before approving.')
     with transaction(db):post.status='approved'
     return post
 
@@ -149,7 +178,12 @@ def regenerate(company_id:UUID,post_id:UUID,data:RegenerateRequest,user=Depends(
     else:
         instructions='Create a fresh alternative. Do not overwrite saved content.'
     if data.instructions:instructions+=f' User direction: {data.instructions}'
-    return ai_queue.enqueue(db,company,user,'content_generation',data.request_key,{'context':context_for(db,company),'request':{'platforms':[post.platform],'content_type':post.content_type,'topic':post.title,'instructions':instructions[:1500],'regenerate_mode':data.mode,'source_post_id':str(post.id)}})
+    context = context_for(db, company)
+    if post.generation_job_id:
+        previous = db.scalar(select(AIJob).where(AIJob.id == post.generation_job_id, AIJob.company_id == company_id))
+        if previous and previous.result and (profiles := previous.result.get('strategy', {}).get('published_social_style')):
+            context['published_social_style'] = profiles
+    return ai_queue.enqueue(db,company,user,'content_generation',data.request_key,{'context':context,'request':{'platforms':[post.platform],'content_type':post.content_type,'topic':post.title,'instructions':instructions[:1500],'regenerate_mode':data.mode,'source_post_id':str(post.id)}})
 
 
 @router.post('/posts/{post_id}/images',response_model=AIJobResponse,status_code=202)
@@ -157,7 +191,8 @@ def images(company_id:UUID,post_id:UUID,data:ImageRequest,user=Depends(current_u
     """Generate or regenerate a post image. Earlier images are kept; the new one becomes primary.
     For an approved post this returns it to draft when the image is attached (revision protection)."""
     company=company_access(db,user,company_id,True);post=post_access(db,company_id,post_id)
-    return post_media.enqueue_post_image(db,company,user,post,data.request_key,context_for(db,company),data.aspect_ratio,data.instructions)
+    return post_media.enqueue_post_image(db,company,user,post,data.request_key,context_for(db,company),data.aspect_ratio,data.instructions,
+                                         data.operation,data.parent_asset_id,data.options.model_dump() if data.options else None)
 
 
 @router.get('/posts/{post_id}/assets')
@@ -224,6 +259,21 @@ def versions(company_id:UUID,post_id:UUID,limit:int=Query(20,ge=1,le=100),user=D
     company_access(db,user,company_id);post_access(db,company_id,post_id)
     rows=db.scalars(select(PostVersion).where(PostVersion.company_id==company_id,PostVersion.post_id==post_id).order_by(PostVersion.revision.desc()).limit(limit)).all()
     return [{'revision':v.revision,'snapshot':v.snapshot,'created_at':v.created_at} for v in rows]
+
+
+@router.post('/media/{asset_id}/review')
+def review_asset(company_id:UUID,asset_id:UUID,data:AssetReview,user=Depends(current_user),db=Depends(storage)):
+    """Record the reviewer's accept/reject decision (or clear it). Images are never deleted, and the
+    decision does not change which image a post uses; approving a post with a rejected image is blocked."""
+    company_access(db,user,company_id,True)
+    asset=db.scalar(select(PostAsset).where(PostAsset.company_id==company_id,PostAsset.id==asset_id).with_for_update())
+    if not asset:raise HTTPException(404,'Asset not found')
+    with transaction(db):
+        asset.review_decision=data.decision
+        asset.reviewed_by=user.id if data.decision else None
+        asset.reviewed_at=now() if data.decision else None
+    primary=db.scalar(select(Post.primary_asset_id).where(Post.company_id==company_id,Post.id==asset.post_id)) if asset.post_id else None
+    return post_media.asset_view(asset,primary)
 
 
 @router.get('/media/{asset_id}')

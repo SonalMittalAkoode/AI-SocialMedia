@@ -1,0 +1,102 @@
+.trend-workspace {
+  display: grid;
+  gap: 16px;
+  max-width: 1180px;
+}
+.trend-heading {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.trend-heading > svg {
+  margin-top: 4px;
+  color: var(--bordeaux);
+  flex: none;
+}
+.trend-heading > div {
+  flex: 1 1 225px;
+  min-width: 0;
+}
+.trend-heading h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin: 0;
+}
+.trend-heading p {
+  margin: 5px 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.88rem;
+}
+.trend-search-form {
+  margin-top: 17px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(136px, 0.3fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.trend-search-form .field {
+  margin: 0;
+  min-width: 0;
+}
+.trend-search-form .button {
+  min-height: 43px;
+}
+.trend-discovery > p,
+.trend-notes > p {
+  margin: 13px 0 0;
+}
+.trend-note-form {
+  padding: 16px;
+  margin-top: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.trend-note-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.trend-note-form .check-label {
+  margin-bottom: 12px;
+}
+.trend-note-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.trend-note-list li {
+  border-top: 1px solid var(--border);
+  padding: 13px 0;
+  overflow-wrap: anywhere;
+}
+.trend-note-list h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 650;
+}
+.trend-note-list p {
+  margin: 4px 0 9px;
+  white-space: pre-wrap;
+  color: var(--foreground);
+}
+.trend-note-list .trend-source {
+  color: var(--muted-foreground);
+  font-size: 0.83rem;
+}
+.trend-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary-text);
+  text-decoration: underline;
+}
+@media (max-width: 800px) {
+  .trend-search-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

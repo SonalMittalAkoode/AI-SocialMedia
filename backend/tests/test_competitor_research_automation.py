@@ -286,6 +286,9 @@ def test_approved_researched_insights_feed_generation_context(client, db, owner,
     db.commit()
     insights = service.approved_insights(db, c["id"])
     assert {i["name"] for i in insights} == {"Alpha Engineering", "Beta Engineering"}
+    capabilities = client.get(root + "/ai-capabilities").json()
+    assert capabilities["can_manage_competitors"] is True
+    assert set(capabilities["content_eligible_competitor_ids"]) == {a["id"], b["id"]}
     assert insights[0]["opportunities"] == ["Show process"] and insights[0]["positioning"] == "Specialist"
     removed = db.get(Competitor, a["id"]); removed.removed_at = now(); db.commit()
     assert [i["name"] for i in service.approved_insights(db, c["id"])] == ["Beta Engineering"]
@@ -294,6 +297,14 @@ def test_approved_researched_insights_feed_generation_context(client, db, owner,
     context = context_for(db, db.get(Company, c["id"]))
     plan = strategy(context, {"topic": "Launch", "platforms": ["LinkedIn"], "content_type": "educational"})
     assert plan["competitor_opportunities"][0]["name"] == "Beta Engineering"
+    from app.models.onboarding import WorkspaceMember
+    membership = db.scalar(select(WorkspaceMember).where(WorkspaceMember.workspace_id == c["workspace_id"], WorkspaceMember.user_id == owner.id))
+    membership.role = "member"
+    db.commit()
+    capabilities = client.get(root + "/ai-capabilities").json()
+    assert capabilities["can_manage_competitors"] is False
+    assert capabilities["content_eligible_competitor_ids"] == [b["id"]]
+    assert client.post(root + f"/competitors/{b['id']}/research", json={"request_key": str(uuid4())}).status_code == 403
 
 
 # ---------- tenant isolation ----------
@@ -305,6 +316,7 @@ def test_new_routes_are_tenant_isolated(client, db, owner, setup):
     client.post(root + "/competitors/research-batch", json={"request_key": key, "competitor_ids": [a["id"]]})
     other = User(full_name="Other", email=f"other-{uuid4().hex}@example.com", hashed_password=owner.hashed_password)
     db.add(other); db.commit(); client.cookies.set("access_token", create_access_token(other.id))
+    assert client.get(root + "/ai-capabilities").status_code == 404
     assert client.get(root + f"/competitor-research-batches/{key}").status_code == 404
     assert client.post(root + "/competitors/research-batch", json={"request_key": str(uuid4()), "competitor_ids": [a["id"]]}).status_code == 404
     assert client.post(root + "/competitors/bulk", json={"request_key": str(uuid4()), "competitors": [{"name": "Intruder Co", "website_url": "https://intruder.org"}]}).status_code == 404

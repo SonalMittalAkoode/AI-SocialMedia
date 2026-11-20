@@ -12,7 +12,6 @@ import {
   competitorView,
   domainOf,
   pathOf,
-  MAX_APPROVED,
   Provenance,
   ResearchStatus,
   stageLabel,
@@ -20,7 +19,7 @@ import {
   when,
 } from "./shared";
 import { CompetitorActions, menuActions } from "./my-competitors";
-import { researchState } from "./use-competitor-data";
+import { hasCurrentResearch, researchState } from "./use-competitor-data";
 
 function Section({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) {
   return (
@@ -53,6 +52,7 @@ export function CompetitorDrawer({
   approvedCount,
   busy,
   onClose,
+  restoreFocus,
 }: {
   row: RealCompetitor;
   history: Research[];
@@ -60,20 +60,26 @@ export function CompetitorDrawer({
   approvedCount: number;
   busy: boolean;
   onClose: () => void;
+  restoreFocus: () => void;
 }) {
-  const [index, setIndex] = useState(0);
-  const finding = history[index];
+  const [selectedId, setSelectedId] = useState("");
+  const finding = history.find((item) => item.id === selectedId) || history[0];
   const view = finding ? researchView(finding) : null;
   const base = competitorView(row, history[0]);
   const state = researchState(row);
+  const useCurrentScore = finding === history[0] && hasCurrentResearch(row);
+  const storedScore = finding?.data.relevance_score;
+  const score = useCurrentScore ? row.relevance_score : typeof storedScore === "number" ? storedScore : null;
+  const reason = useCurrentScore ? row.relevance_reason : typeof finding?.data.relevance_reason === "string" ? finding.data.relevance_reason : "";
   const failed = state === "failed" ? row.research_job : null;
   const removed = !!row.removed_at;
-  const verifiedServices = finding?.source_evidence.some((e) => e.field === "products_services" && e.classification !== "suggested");
+  const verifiedServices = view?.services.every((service) => finding?.source_evidence.some((e) => e.field === "products_services" && e.value === service && e.classification === "explicit"));
+  const verifiedDescription = finding?.source_evidence.some((e) => e.field === "description" && e.value === view?.business.description && e.classification === "explicit");
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="cx-drawer-overlay" />
-        <Dialog.Content className="cx-drawer" aria-describedby={undefined}>
+        <Dialog.Content className="cx-drawer" aria-describedby={undefined} onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus(); }}>
           <header className="cx-drawer-head">
             <Avatar name={row.name} size={44} />
             <div className="cx-drawer-title">
@@ -89,7 +95,7 @@ export function CompetitorDrawer({
                 <ApprovalStatus value={approvalOf(row)} />
               </div>
             </div>
-            <ActionMenu label={`More actions for ${row.name}`} actions={menuActions(row, actions, approvedCount, busy).filter((a) => !["Approve competitor", "Reject competitor", "Reanalyze"].includes(a.label))} />
+            <ActionMenu label={`More actions for ${row.name}`} actions={menuActions(row, actions, approvedCount, busy).filter((a) => !["View details", "Approve competitor", "Reject competitor", "Reanalyze", "Research website"].includes(a.label))} />
             <Dialog.Close className="cx-icon-button" aria-label="Close dialog">
               <X size={16} />
             </Dialog.Close>
@@ -103,15 +109,17 @@ export function CompetitorDrawer({
               </p>
             )}
             {!view ? (
-              <div className="cx-dempty">
-                <p>
-                  <strong>Research unavailable.</strong> Run website research to extract business information, offerings, audience, positioning, strengths and content opportunities. No unsupported facts or metrics are shown.
-                </p>
-                {state === "researching" && <ResearchStatus state={state} stage={stageLabel(row.research_job?.stage)} />}
-              </div>
+              <Section title="Company Overview">
+                {base.description && <p>{base.description}</p>}
+                {base.location && <p className="cx-dmeta"><MapPin size={12} aria-hidden /> {base.location}</p>}
+                <div className="cx-dempty">
+                  <p><strong>Research unavailable.</strong> Research the website to find offerings, audience, positioning, and content opportunities.</p>
+                  {state === "researching" && <ResearchStatus state={state} stage={stageLabel(row.research_job?.stage)} />}
+                </div>
+              </Section>
             ) : (
               <>
-                <Section title="Overview" aside={<Provenance kind="verified" />}>
+                <Section title="Company Overview" aside={verifiedDescription ? <Provenance kind="verified" /> : undefined}>
                   <p>{view.business.description || base.description || "Description unavailable."}</p>
                   {(base.location || view.business.location) && (
                     <p className="cx-dmeta">
@@ -131,25 +139,25 @@ export function CompetitorDrawer({
                   {!verifiedServices && view.services.length > 0 && <p className="cx-muted">Some offerings are inferred from page content.</p>}
                 </Section>
 
-                <Section title="Competitive relevance" aside={<Provenance kind="interpretation" />}>
+                <Section title="Competitive Relevance" aside={<Provenance kind="interpretation" />}>
                   <div className="cx-relevance">
                     <div>
                       <span>
                         Relevance score <small>(heuristic, not a probability)</small>
                       </span>
-                      <strong>{row.relevance_score}/100</strong>
+                      <strong>{score === null ? "Unavailable for this run" : `${score}/100`}</strong>
                     </div>
                     <div className="cx-bar" aria-hidden>
-                      <i style={{ width: `${row.relevance_score}%` }} />
+                      <i style={{ width: `${score ?? 0}%` }} />
                     </div>
                   </div>
                   {view.fit && <p>{view.fit.rationale}</p>}
-                  <p className="cx-muted">{row.relevance_reason}</p>
+                  {reason && <p className="cx-muted">{reason}</p>}
                   <h4>Market positioning</h4>
                   <p>{view.positioning || "Not determined from the researched pages."}</p>
                 </Section>
 
-                <Section title="Key strengths">
+                <Section title="Competitive Strengths">
                   {view.strengths.length ? (
                     <ul className="cx-dlist cx-dlist-rich">
                       {view.strengths.map((s, i) => (
@@ -165,7 +173,7 @@ export function CompetitorDrawer({
                   )}
                 </Section>
 
-                <Section title="Content strategy">
+                <Section title="Content Intelligence">
                   <h4>Content themes</h4>
                   {view.themes.length ? (
                     <div className="cx-themes">
@@ -211,7 +219,7 @@ export function CompetitorDrawer({
                   </p>
                   {finding.source_evidence.length ? (
                     <ul className="cx-evidence">
-                      {finding.source_evidence.slice(0, 40).map((e, i) => (
+                      {finding.source_evidence.map((e, i) => (
                         <li key={i}>
                           <span className="cx-evidence-field">{e.field.replaceAll("_", " ")}</span>
                           <span className="cx-evidence-kind">{e.classification}</span>
@@ -232,7 +240,7 @@ export function CompetitorDrawer({
               </>
             )}
 
-            <Section title="Research information">
+            <Section title="Research History">
               <dl className="cx-dfacts">
                 <div>
                   <dt>Status</dt>
@@ -254,9 +262,9 @@ export function CompetitorDrawer({
               {history.length > 1 && (
                 <label className="cx-history">
                   Research history
-                  <select value={index} onChange={(e) => setIndex(Number(e.target.value))}>
+                  <select value={selectedId && finding?.id === selectedId ? selectedId : ""} onChange={(e) => setSelectedId(e.target.value)}>
                     {history.map((h, i) => (
-                      <option key={h.id} value={i}>
+                      <option key={h.id} value={i === 0 ? "" : h.id}>
                         {when(h.created_at) || `Run ${history.length - i}`}
                         {i === 0 ? " (latest)" : ""}
                       </option>
@@ -267,7 +275,7 @@ export function CompetitorDrawer({
             </Section>
           </div>
 
-          <footer className="cx-drawer-foot">
+          {actions.canManage && <footer className="cx-drawer-foot">
             {removed ? (
               <Button disabled={busy} onClick={() => actions.restore(row)}>
                 Restore competitor
@@ -276,8 +284,8 @@ export function CompetitorDrawer({
               <>
                 {row.selection_status !== "approved" ? (
                   <Button
-                    disabled={busy || approvedCount >= MAX_APPROVED}
-                    title={approvedCount >= MAX_APPROVED ? `Up to ${MAX_APPROVED} competitors can be approved` : undefined}
+                    disabled={busy || approvedCount >= actions.maxApproved}
+                    title={approvedCount >= actions.maxApproved ? `Up to ${actions.maxApproved} competitors can be approved` : undefined}
                     onClick={() => actions.select(row, "approved")}
                   >
                     Approve competitor
@@ -289,7 +297,7 @@ export function CompetitorDrawer({
                 )}
                 {row.selection_status !== "rejected" && (
                   <Button variant="ghost" disabled={busy} onClick={() => actions.select(row, "rejected")}>
-                    Reject
+                    Reject competitor
                   </Button>
                 )}
                 <Button variant="secondary" disabled={busy || state === "researching"} onClick={() => actions.research([row.id], state !== "not_researched")}>
@@ -298,7 +306,7 @@ export function CompetitorDrawer({
                 </Button>
               </>
             )}
-          </footer>
+          </footer>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

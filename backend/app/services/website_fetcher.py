@@ -96,9 +96,10 @@ class WebsiteFetcher:
     async def close(self):
         await self.client.aclose()
 
-    async def get(self, url, *, allowed_origin=None, robots=False, before_request=None, allow_canonical=False, media=False):
+    async def get(self, url, *, allowed_origin=None, robots=False, before_request=None, allow_canonical=False, media=False, stylesheet=False):
         url = validate_url(url)
         initial_url = url
+        headers = {"Accept": "image/png,image/jpeg,image/webp,image/svg+xml"} if media else {"Accept": "text/css"} if stylesheet else None
         for redirect in range(limits.max_redirects + 1):
             if allowed_origin and origin(url) != allowed_origin and not (allow_canonical and canonical_redirect_allowed(initial_url, url)):
                 error = ExtractionError("external_redirect", "The website redirected outside the permitted origin. Submit its final public URL instead.")
@@ -108,7 +109,7 @@ class WebsiteFetcher:
                 await before_request(url)
             try:
                 async with asyncio.timeout(limits.request_timeout):
-                    async with self.client.stream("GET", url) as response:
+                    async with self.client.stream("GET", url, headers=headers) as response:
                         if response.status_code in {301, 302, 303, 307, 308}:
                             if redirect == limits.max_redirects or not response.headers.get("location"):
                                 raise ExtractionError("redirect_limit", "The website redirected too many times.")
@@ -123,7 +124,7 @@ class WebsiteFetcher:
                         mime = response.headers.get("content-type", "").split(";")[0].lower()
                         if "noai" in response.headers.get("x-robots-tag", "").lower():
                             raise ExtractionError("restricted", "The website explicitly restricts AI processing.")
-                        if mime not in ({"image/png","image/jpeg","image/webp","image/svg+xml"} if media else {"text/plain", "text/html"} if robots else {"text/html", "application/xhtml+xml"}):
+                        if mime not in ({"image/png","image/jpeg","image/webp","image/svg+xml"} if media else {"text/css"} if stylesheet else {"text/plain", "text/html"} if robots else {"text/html", "application/xhtml+xml"}):
                             raise ExtractionError("unsupported_content", "The website did not return supported HTML content.")
                         if response.headers.get("content-encoding", "identity").lower() not in {"", "identity"}:
                             raise ExtractionError("unsupported_encoding", "The website ignored the bounded uncompressed response request.")

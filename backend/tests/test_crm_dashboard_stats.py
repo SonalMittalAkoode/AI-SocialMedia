@@ -1,6 +1,6 @@
 """Overview statistics and Post Library date/media filters match real records exactly."""
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 import pytest
 from PIL import Image
@@ -10,8 +10,10 @@ from app.core.security import create_access_token
 from app.models.content import Post
 from app.models.intelligence import AIJob, Competitor, CompetitorResearch
 from app.models.user import User
+from app.services import crm
 from test_onboarding import owner, workspace, company  # noqa: F401
 from test_content import draft
+from test_scheduling_models import schedule
 
 
 def png():
@@ -61,7 +63,7 @@ def test_overview_content_and_competitor_statistics(client, db, owner, setup):
 
 def test_library_date_filter_uses_company_timezone_and_media_filter(client, db, setup):
     c, root = setup
-    client.patch(root, json={"revision": client.get(root).json()["revision"], "timezone": "Asia/Kolkata"})
+    assert client.patch(root + "/scheduling-preferences", json={"revision": client.get(root).json()["revision"], "timezone": "Asia/Kolkata"}).is_success
     early, late, plain = post(client, root, title="Early post"), post(client, root, title="Late post"), post(client, root, title="Text only")
     # 2026-03-01 23:30 IST == 18:00 UTC; 2026-03-02 00:30 IST == 2026-03-01 19:00 UTC.
     db.execute(update(Post).where(Post.id == early["id"]).values(created_at=datetime(2026, 3, 1, 18, 0, tzinfo=timezone.utc)))
@@ -92,3 +94,38 @@ def test_new_filters_remain_tenant_isolated(client, db, owner, setup):
     db.add(other); db.commit(); client.cookies.set("access_token", create_access_token(other.id))
     assert client.get(root + "/post-library?created_from=2026-01-01&media=with_image").status_code == 404
     assert client.get(root + "/dashboard/summary").status_code == 404
+
+
+def test_upcoming_projection_keeps_active_future_rows_and_legacy_counts(client, db, setup, monkeypatch):
+    _, root = setup
+    now = datetime.now(timezone.utc)
+
+    def planned(title, days):
+        saved = post(client, root, title=title)
+        assert client.post(root + f"/posts/{saved['id']}/approve", json={"revision": saved["revision"]}).is_success
+        row = db.get(Post, UUID(saved["id"]))
+        return row, schedule(db, row, scheduled_at=now + timedelta(days=days))
+
+    _, scheduled = planned("Future", 6)
+    blocked_post, blocked = planned("Blocked future", 5)
+    _, cancelled = planned("Cancelled future", 4)
+    _, earlier = planned("Overdue", 2)
+    db.commit()
+    blocked_post.caption = "Changes to the approved content need review."
+    db.commit()
+    assert client.post(root + f"/schedules/{cancelled.id}/cancel", json={"revision": cancelled.revision}).is_success
+
+    class OverviewClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now + timedelta(days=3)
+
+    monkeypatch.setattr(crm, "datetime", OverviewClock)
+    overview = client.get(root + "/dashboard/summary").json()
+    assert overview["upcoming_scheduled_posts"] == 2
+    assert [(row["id"], row["status"]) for row in overview["upcoming_active_schedules"]] == [
+        (str(blocked.id), "blocked"), (str(scheduled.id), "scheduled"),
+    ]
+    assert [row["id"] for row in overview["upcoming_schedules"]] == [str(scheduled.id)]
+    assert overview["scheduled_posts"] == 2  # Includes the overdue row until the scheduler transitions it.
+    assert str(earlier.id) not in [row["id"] for row in overview["upcoming_active_schedules"]]

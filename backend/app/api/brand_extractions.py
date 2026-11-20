@@ -7,6 +7,7 @@ from app.core.permissions import company_access
 from app.models.brand_extraction import BrandExtractionJob as Job, BrandExtractionResult as Result
 from app.schemas.brand_extraction import StartExtraction, JobResponse, ResultResponse, ApplyFindings
 from app.services import extraction_jobs as service
+from app.services.brand_provenance import website_host
 
 router = APIRouter(prefix="/companies/{company_id}/brand-extractions", tags=["Brand extraction"], dependencies=[Depends(request_policy)])
 
@@ -56,6 +57,8 @@ def apply(company_id: UUID, job_id: UUID, data: ApplyFindings, user=Depends(curr
     job = job_access(db, company_id, job_id)
     if job.status != "completed":
         raise HTTPException(409, "Complete the analysis before applying findings")
+    if company.website_url and website_host(company.website_url) != website_host(job.requested_url):
+        raise HTTPException(409, "Analyze the current company website before applying findings.")
     result = db.scalar(select(Result).where(Result.job_id == job.id, Result.company_id == company_id))
     if not result:
         raise HTTPException(404, "Analysis result unavailable")

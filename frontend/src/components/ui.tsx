@@ -113,19 +113,21 @@ export function Modal({
   onOpenChange,
   title,
   description,
+  contentClassName,
   children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: string;
+  contentClassName?: string;
   children: ReactNode;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="modal-overlay" />
-        <Dialog.Content className="modal">
+        <Dialog.Content className={cn("modal", contentClassName)}>
           <Dialog.Title>{title}</Dialog.Title>
           <Dialog.Description>
             {description || "Manage your local demo workspace."}

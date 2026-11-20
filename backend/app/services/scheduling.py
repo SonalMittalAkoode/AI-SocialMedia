@@ -88,7 +88,7 @@ def change(db,company,user,schedule_id,data,cancel=False):
     return row
 
 
-def calendar_rows(db,company_id,start,end,platform,status,limit,offset,schedule_id=None):
+def calendar_rows(db,company_id,start,end,platform,status,limit,offset,schedule_id=None,*,statuses=None):
     # Joined post projection and one correlated asset existence check: no N+1.
     has_asset=select(PostAsset.id).where(PostAsset.post_id==Post.id,PostAsset.company_id==company_id).exists()
     query=select(PostSchedule,Post.title,Post.caption,Post.status,Post.revision,has_asset,Company.timezone).join(Post,(Post.id==PostSchedule.post_id)&(Post.company_id==PostSchedule.company_id)).join(Company,Company.id==PostSchedule.company_id).where(PostSchedule.company_id==company_id)
@@ -96,6 +96,7 @@ def calendar_rows(db,company_id,start,end,platform,status,limit,offset,schedule_
     if end is not None:query=query.where(PostSchedule.scheduled_at<end)
     if platform:query=query.where(PostSchedule.target_platform==platform)
     if status:query=query.where(PostSchedule.status==status)
+    if statuses:query=query.where(PostSchedule.status.in_(statuses))
     if schedule_id:query=query.where(PostSchedule.id==schedule_id)
     output=[]
     for row,title,caption,approval,revision,has_media,company_zone in db.execute(query.order_by(PostSchedule.scheduled_at,PostSchedule.id).limit(limit).offset(offset)):

@@ -8,6 +8,7 @@ import {
   companyCacheKey,
   selectionKey,
   emptyCompanyState,
+  onboardingState,
 } from "../../src/lib/company-state";
 import { onboardingPath } from "../../src/lib/storage";
 import {
@@ -84,6 +85,13 @@ const bundle: CompanyBundle = {
 };
 afterEach(() => vi.unstubAllGlobals());
 describe("server-authoritative company state", () => {
+  it("resumes the earliest unfinished milestone and preserves legacy completion", () => {
+    const old = { ...bundle.progress, current_step: "generate" as const };
+    expect(onboardingState({ ...old, completed_steps: [] }, false).step).toBe(0);
+    expect(onboardingState({ ...old, completed_steps: ["business"] }, false).step).toBe(1);
+    expect(onboardingState(old, true).step).toBe(2);
+    expect(onboardingState({ ...old, status: "completed" }, false).completed).toBe(true);
+  });
   it("restores server brand/preferences without importing stale local fields", () => {
     const local = initialState();
     local.workspace.company.name = "Stale browser brand";
@@ -96,8 +104,8 @@ describe("server-authoritative company state", () => {
       "Carousel Posts",
     ]);
     expect(state.posts[0].caption).toBe("My local mock draft");
-    expect(onboardingPath(state)).toBe("/onboarding/brand");
-    expect(state.onboarding.step).toBe(3);
+    expect(onboardingPath(state)).toBe("/onboarding/goals");
+    expect(state.onboarding.step).toBe(2);
   });
   it("maps UI labels to canonical API values and null unknown fields", () => {
     const state = initialState();
@@ -115,6 +123,49 @@ describe("server-authoritative company state", () => {
       posting_frequency: "3_per_week",
     });
     expect(brandPayload(state)).toMatchObject({ source: "manual" });
+  });
+  it("fills untouched onboarding preferences from the confirmed brand", () => {
+    const draft = {
+      ...bundle,
+      brand: {
+        ...bundle.brand,
+        content_guidelines:
+          "Use clear captions.\nContent pillars: Book reviews, Author interviews\nSuggested content tone: Inspiring, Invented\nTopics to avoid: Plot spoilers",
+      },
+      preferences: {
+        ...bundle.preferences,
+        revision: 1,
+        platforms: [],
+        tone: [],
+        custom_instructions: null,
+      },
+    };
+    const state = applyBundle(initialState(), w, draft);
+    expect(preferencePayload(state)).toMatchObject({
+      target_audience: "Local customers",
+      content_topics: ["Book reviews", "Author interviews"],
+      excluded_topics: ["Plot spoilers"],
+      visual_style: expect.stringContaining("#123456"),
+      custom_instructions: "Use clear captions.",
+      platforms: ["instagram"],
+      tone: ["friendly", "inspirational"],
+    });
+
+    const saved = applyBundle(initialState(), w, {
+      ...draft,
+      preferences: {
+        ...draft.preferences,
+        revision: 2,
+        target_audience: "Teachers",
+      },
+    });
+    expect(preferencePayload(saved)).toMatchObject({
+      target_audience: "Teachers",
+      content_topics: [],
+      excluded_topics: [],
+      visual_style: null,
+      custom_instructions: null,
+    });
   });
   it("keeps new-company setup blank and never carries local completion into server progress", () => {
     const old = initialState();
@@ -181,13 +232,11 @@ describe("real company API integration", () => {
     expect(await getCompanyBundle(id)).toEqual(bundle);
   });
   it("reports stale revisions without retrying an overwrite", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValue(
-        new Response('{"detail":"This record changed in another session"}', {
-          status: 409,
-        }),
-      );
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response('{"detail":"This record changed in another session"}', {
+        status: 409,
+      }),
+    );
     vi.stubGlobal("fetch", fetcher);
     await expect(createWorkspace({ name: "Test" })).rejects.toThrow(
       "changed in another session",

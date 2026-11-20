@@ -3,6 +3,11 @@ import { Provider } from "@/store/provider";
 import "./globals.css";
 import "./crm.css";
 import "./competitors.css";
+import "./social-accounts.css";
+import "./content-quality.css";
+import "./onboarding-setup.css";
+import "./dashboard-overview.css";
+import "./trend-research.css";
 export const metadata: Metadata = {
   title: "SocialAI — A little intelligence. A lot of impact.",
   description:

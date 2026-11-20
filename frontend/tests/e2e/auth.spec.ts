@@ -35,7 +35,7 @@ test("unfinished company setup does not block login or CRM deep links", async ({
   await page.getByRole("button", { name: "Log in to your workspace" }).click();
   await expect(page).toHaveURL("/dashboard");
   await expect(
-    page.getByRole("heading", { name: "Workspace overview" }),
+    page.getByRole("heading", { name: "Your creative workspace" }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Continue company setup" }),
@@ -52,10 +52,11 @@ test("unfinished company setup does not block login or CRM deep links", async ({
   expect(await (await page.request.get(progressURL)).json()).toEqual(before);
   await page.getByRole("link", { name: "Continue company setup" }).click();
   await expect(page).toHaveURL("/onboarding/business");
-  await expect(page.getByLabel("Business name *", { exact: true })).toHaveValue(
+  await page.getByRole("button", { name: /No website/ }).click();
+  await expect(page.getByLabel("Business name", { exact: true })).toHaveValue(
     company.name,
   );
-  await page.getByRole("button", { name: "Save & exit" }).click();
+  await page.getByRole("link", { name: "Save & exit" }).click();
   await expect(page).toHaveURL("/dashboard");
 });
 
@@ -115,11 +116,11 @@ test("cookie restores the session, failed logout retains it, and successful logo
   await signInWorkspace(page);
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("heading", { name: /Workspace overview/ }),
+    page.getByRole("heading", { name: /Your creative workspace/ }),
   ).toBeVisible();
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: /Workspace overview/ }),
+    page.getByRole("heading", { name: /Your creative workspace/ }),
   ).toBeVisible();
   const cookie = (await context.cookies()).find(
     (c) => c.name === "access_token",
@@ -164,7 +165,7 @@ test("expired session clears auth while leaving local workspace data intact", as
   const { id, companyId } = await signInWorkspace(page);
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("heading", { name: /Workspace overview/ }),
+    page.getByRole("heading", { name: /Your creative workspace/ }),
   ).toBeVisible();
   const before = await page.evaluate(
     (key) => localStorage.getItem(key),
@@ -204,6 +205,6 @@ test("API unavailable offers retry without flashing protected content", async ({
     page.getByRole("button", { name: "Try again", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: /Workspace overview/ }),
+    page.getByRole("heading", { name: /Your creative workspace/ }),
   ).toHaveCount(0);
 });

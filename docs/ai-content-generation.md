@@ -1,5 +1,7 @@
 # AI content and persistent drafts
 
+> Phase 8A.1 (19 November 2026) replaced the image brief, caption strategy and Studio controls and added image quality checks, variations and review. See [ai-content-quality-optimization.md](ai-content-quality-optimization.md); where the two documents differ, that one is current.
+
 ## End-to-end text and image generation — 17 November 2026 (latest)
 
 This section supersedes the Phase 6 statements below that live image generation is unconfigured/unverified and that images are square or 16:9 only. Everything else in the Phase 6 handoff still applies.
@@ -216,3 +218,10 @@ Full browser regression: 17/17 passed, including all 15 existing regressions and
 Initial browser runs exposed stale demo selectors and the legacy `.example` own-company URL error; these are fixed. A concurrent diagnostic Playwright run also collided with the shared trace directory; the final full run was isolated and passed. No tests were deleted, skipped or disabled. Mobile screenshot inspection led to shortening the edit-button label while preserving its accessible full title. Final targeted browser/build results follow below.
 
 Final checks after the identity, observability and mobile-label fixes: **135 backend tests passed**, **38 frontend unit tests passed**, **17 full browser regressions passed**, and the **2 affected browser journeys passed again** after the final UI change. TypeScript, ESLint (zero warnings), optimized production build, Alembic schema check and Git whitespace check passed. Media cleanup dry-run found zero orphan files. The shared worker was restarted on the final code and is running. Live image/search checks were not run and remain explicitly incomplete. No test is skipped. Vitest emits an existing configuration-loader compatibility advisory; it does not fail the suite.
+## Published brand posts
+
+In Content Studio and the final onboarding step, open **Learn from published posts**. If the company has an authorized Facebook Page or Instagram professional account feed, SocialAI samples up to six published posts per account when you generate. You can also paste up to six published captions, with `---` on a separate line between captions.
+
+The draft uses observed content categories, media formats, caption length, question openings, hashtag count, and calls to action as editorial cues. The result shows which samples informed the draft. SocialAI stores the aggregate profile with the generation rather than the fetched posts or pasted captions. The profile describes the available sample and provides no performance metrics or new product claims.
+
+To enable a read-only feed, set `BRAND_SOCIAL_META_ACCOUNTS` in `backend/.env` to a JSON array of company configurations. Each object needs a SocialAI `company_id`. Facebook also needs `facebook_page_id` and an authorized `facebook_page_token`. Instagram uses `instagram_account_id` and an authorized `instagram_user_token` for Instagram API with Facebook Login. Configure only accounts the company has authorized and keep tokens server-side. `BRAND_SOCIAL_META_VERSION` can override the Graph API version. Restart the API and shared worker after changing configuration. Instagram and Facebook can be enabled independently. The caption example option is available for any platform. [Facebook Page published posts](https://developers.facebook.com/docs/graph-api/reference/page/published_posts) · [Instagram professional account media](https://developers.facebook.com/docs/graph-api/reference/shadow-ig-user/media/)

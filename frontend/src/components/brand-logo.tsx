@@ -8,8 +8,9 @@ import { getCompanyBundle } from "@/lib/company-api";
 import {
   listExtractions,
   getExtractionResult,
+  websiteHost,
 } from "@/lib/brand-extraction-api";
-export function BrandLogoEditor() {
+export function BrandLogoEditor({ analysisJob }: { analysisJob?: string }) {
   const { companyId, state, setState, reloadCompany } = useStore();
   const current = useRef(state);
   useEffect(() => {
@@ -22,6 +23,8 @@ export function BrandLogoEditor() {
     { job: string; index: number; url: string }[]
   >([]);
   const [colors, setColors] = useState<string[]>([]);
+  const [sourceHost, setSourceHost] = useState("");
+  const host = websiteHost(state.workspace.company.website);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -29,14 +32,15 @@ export function BrandLogoEditor() {
     };
   }, []);
   useEffect(() => {
-    if (!companyId) return;
+    if (!companyId || !host) return;
     let active = true;
     void listExtractions(companyId)
       .then(async (jobs) => {
-        const job = jobs.find((j) => j.status === "completed");
+        const job = jobs.find((j) => j.status === "completed" && websiteHost(j.requested_url) === host);
         if (!job) return;
         const result = await getExtractionResult(companyId, job.id);
         if (!active) return;
+        setSourceHost(host);
         const rows = result.source_pages.flatMap(
           (p) => p.logo_candidates || [],
         );
@@ -55,7 +59,7 @@ export function BrandLogoEditor() {
     return () => {
       active = false;
     };
-  }, [companyId]);
+  }, [companyId, analysisJob, host]);
   async function action(path: string, method: string, file?: File) {
     if (!companyId) return;
     setBusy(true);
@@ -90,7 +94,10 @@ export function BrandLogoEditor() {
           },
         },
       }));
-      if (data.extracted_colors) setColors(data.extracted_colors);
+      if (data.extracted_colors) {
+        setColors(data.extracted_colors);
+        setSourceHost(host);
+      }
     } catch (e) {
       if (mounted.current)
         setError(e instanceof Error ? e.message : "Logo could not be saved");
@@ -112,12 +119,12 @@ export function BrandLogoEditor() {
           width={120}
           height={80}
           unoptimized
-          style={{ objectFit: "contain" }}
+          style={{ objectFit: "contain", background: "#929298", borderRadius: 6, padding: 10 }}
         />
       )}
       <p>
-        Use an actual website logo or upload your own. Files are validated and
-        stored privately with this company. No replacement logo is generated.
+        Website analysis can import the published logo and colors automatically.
+        You can replace the logo or edit the palette before confirming.
       </p>
       <label className="upload-label">
         Upload or replace logo
@@ -133,7 +140,7 @@ export function BrandLogoEditor() {
           }}
         />
       </label>
-      {!!choices.length && (
+      {sourceHost === host && !!choices.length && (
         <details>
           <summary>
             Choose another website logo ({choices.length} candidates)
@@ -166,7 +173,7 @@ export function BrandLogoEditor() {
           Remove logo
         </Button>
       )}
-      {!!colors.length && (
+      {sourceHost === host && !!colors.length && (
         <div>
           <p>Extracted website / logo colors. Review before adding:</p>
           <div className="wrap-actions">

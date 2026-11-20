@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button, Input, Textarea } from "@/components/ui";
 import { useStore } from "@/store/provider";
 import { CompanyProfile } from "@/types";
@@ -11,9 +11,14 @@ import { getCompanyBundle } from "@/lib/company-api";
 import {
   listExtractions,
   getExtractionResult,
+  websiteHost,
 } from "@/lib/brand-extraction-api";
 import { missingBrandFindings } from "@/lib/brand-prefill";
-export function BrandForm() {
+export function BrandForm({ editor }: { editor?: {
+  profile: CompanyProfile;
+  change: (value: Partial<CompanyProfile>) => void;
+  logo: ReactNode;
+} } = {}) {
   const {
     state,
     setState,
@@ -22,48 +27,53 @@ export function BrandForm() {
     companyBusy,
     companyId,
     approveExtraction,
+    prefillBrandMedia,
   } = useStore();
   const [prefill, setPrefill] = useState("");
   const [checkingAnalysis, setCheckingAnalysis] = useState(true);
+  const [analysisJob, setAnalysisJob] = useState("");
+  const editOnly = !!editor;
   useEffect(() => {
-    if (!companyId) return;
+    if (!companyId || editOnly) return;
     let active = true;
     async function fill() {
       try {
         const jobs = await listExtractions(companyId!);
-        const latest = jobs[0];
+        const host = websiteHost(state.workspace.company.website);
+        const latest = jobs.find((job) => host && websiteHost(job.requested_url) === host && (!analysisJob || job.id === analysisJob));
         if (!active || !latest || latest.status !== "completed") return;
-        const websiteHost = (url: string) =>
-          new URL(url).hostname.replace(/^www\./, "");
-        if (
-          websiteHost(latest.requested_url) !==
-          websiteHost(state.workspace.company.website)
-        )
-          return;
         const key = `socialai-brand-prefilled:${companyId}:${latest.id}`;
+        const mediaKey = `socialai-brand-media-v2:${companyId}:${latest.id}`;
+        let fillFields = !analysisJob;
+        let fillMedia = true;
         try {
-          if (localStorage.getItem(key)) return;
+          fillFields &&= !localStorage.getItem(key);
+          fillMedia = !localStorage.getItem(mediaKey);
         } catch {}
-        const [result, bundle] = await Promise.all([
-          getExtractionResult(companyId!, latest.id),
-          getCompanyBundle(companyId!),
-        ]);
-        if (!active) return;
-        const fields = missingBrandFindings(
-          bundle.brand,
-          result.extracted_data,
-        );
-        if (Object.keys(fields).length) {
-          setPrefill("Filling your brand fields from website analysis…");
-          await approveExtraction(latest.id, fields);
+        if (fillFields) {
+          const [result, bundle] = await Promise.all([
+            getExtractionResult(companyId!, latest.id),
+            getCompanyBundle(companyId!),
+          ]);
           if (!active) return;
-          setPrefill(
-            "Brand fields filled automatically from website analysis. Everything below is editable. Model suggestions are included for voice, audience and guidelines; inspect the analysis for sources. Confirm the brand when ready.",
-          );
+          const fields = missingBrandFindings(bundle.brand, result.extracted_data);
+          // Website and logo colors are combined by the asset importer.
+          delete fields.brand_colors;
+          delete fields.suggested_brand_colors;
+          if (Object.keys(fields).length) {
+            setPrefill("Filling your brand fields from website analysis…");
+            await approveExtraction(latest.id, fields);
+            if (!active) return;
+            setPrefill("Brand fields filled automatically from website analysis. Review and confirm them when ready.");
+          }
+          try { localStorage.setItem(key, "1"); } catch {}
         }
-        try {
-          localStorage.setItem(key, "1");
-        } catch {}
+        if (fillMedia && active) {
+          const changed = await prefillBrandMedia(latest.id);
+          if (!active) return;
+          try { localStorage.setItem(mediaKey, "1"); } catch {}
+          if (changed) setPrefill("Website brand details refreshed. Review the logo, colors and guidelines before confirming.");
+        }
       } catch {
         if (active)
           setPrefill(
@@ -79,9 +89,10 @@ export function BrandForm() {
     };
     // Company-scoped initialization; do not reapply when the user edits a field.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId]);
-  const b = state.workspace.company;
+  }, [companyId, analysisJob, editOnly]);
+  const b = editor?.profile ?? state.workspace.company;
   function update(value: Partial<CompanyProfile>) {
+    if (editor) return editor.change(value);
     setState((s) => ({
       ...s,
       workspace: {
@@ -96,21 +107,22 @@ export function BrandForm() {
   }
   return (
     <div className="brand-form">
-      {(prefill || (companyId && checkingAnalysis)) && (
+      {!editOnly && (prefill || (companyId && checkingAnalysis)) && (
         <p className="notice" role="status">
           {prefill || "Checking completed website analysis to fill your brand fields…"}
         </p>
       )}
       <fieldset
-        disabled={(!!companyId && checkingAnalysis) || companyBusy}
+        disabled={(!editOnly && !!companyId && checkingAnalysis) || companyBusy}
         style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
       >
-        <DraftRecovery />
+        {!editor && <><DraftRecovery />
         <details>
           <summary>Research website and review previous findings</summary>
-          <BrandExtraction key={companyId || "new"} />
+          <BrandExtraction key={companyId || "new"} onNewResult={setAnalysisJob} />
         </details>
-        <BrandLogoEditor key={companyId} />
+        <BrandLogoEditor key={companyId} analysisJob={analysisJob} /></>}
+        {editor?.logo}
         <div className="form-grid">
           <Input
             label="Company name *"
@@ -124,6 +136,7 @@ export function BrandForm() {
             value={b.industry}
             onChange={(industry) => update({ industry })}
           />
+          <Input label="Business type" value={b.businessType || ""} onChange={(e) => update({ businessType: e.target.value })} />
           <Input
             label="Website or social URL"
             type="url"
@@ -140,7 +153,12 @@ export function BrandForm() {
             value={b.country || ""}
             onChange={(e) => update({ country: e.target.value })}
           />
+          <Input label="State / region" value={b.state || ""} onChange={(e) => update({ state: e.target.value })} />
+          <Input label="Office address" value={b.officeAddress || ""} onChange={(e) => update({ officeAddress: e.target.value })} />
+          <Input label="Public business email" type="email" value={b.publicEmail || ""} onChange={(e) => update({ publicEmail: e.target.value })} />
+          <Input label="Public business phone" type="tel" value={b.publicPhone || ""} onChange={(e) => update({ publicPhone: e.target.value })} />
         </div>
+        <Input label="Tagline" value={b.tagline || ""} maxLength={500} onChange={(e) => update({ tagline: e.target.value })} />
         <Textarea
           label="Company description *"
           value={b.description}
@@ -251,6 +269,7 @@ export function BrandForm() {
           </div>
         </div>
         <Button
+          type="button"
           variant="secondary"
           disabled={b.identity.colors.length >= 8}
           onClick={() =>
@@ -294,7 +313,7 @@ export function BrandForm() {
           value={b.guidelines}
           onChange={(e) => update({ guidelines: e.target.value })}
         />
-        <Button
+        {!editOnly && <Button
           variant="secondary"
           disabled={companyBusy}
           onClick={async () => {
@@ -309,7 +328,11 @@ export function BrandForm() {
           }}
         >
           Save brand changes
-        </Button>
+        </Button>}
+        {!editOnly && companyId && <Button variant="secondary" disabled={companyBusy} onClick={async () => {
+          try { await saveBrand(true); toast("Brand identity confirmed."); }
+          catch (error) { toast(error instanceof Error ? error.message : "Your brand could not be confirmed."); }
+        }}>Confirm brand identity</Button>}
       </fieldset>
     </div>
   );

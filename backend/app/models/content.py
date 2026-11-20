@@ -55,6 +55,13 @@ class PostAsset(Base):
         CheckConstraint("post_id IS NOT NULL OR (generation_job_id IS NOT NULL AND result_index IS NOT NULL)", name="ck_asset_owner"),
         CheckConstraint("result_index IS NULL OR result_index BETWEEN 0 AND 2", name="ck_asset_result_index"),
         Index("ix_asset_generation_result", "company_id", "generation_job_id", "result_index", postgresql_where=text("generation_job_id IS NOT NULL")),
+        # Version lineage: a variation records the image it was derived from (same company only).
+        UniqueConstraint("id", "company_id", name="uq_asset_company"),
+        ForeignKeyConstraint(["parent_asset_id", "company_id"], ["post_assets.id", "post_assets.company_id"], ondelete="RESTRICT", name="fk_asset_parent"),
+        CheckConstraint("generation_mode IS NULL OR generation_mode IN ('fresh','edit')", name="ck_asset_generation_mode"),
+        CheckConstraint("quality_status IS NULL OR quality_status IN ('ready_for_review','needs_review')", name="ck_asset_quality_status"),
+        CheckConstraint("review_decision IS NULL OR review_decision IN ('accepted','rejected')", name="ck_asset_review_decision"),
+        CheckConstraint("(review_decision IS NULL) = (reviewed_at IS NULL)", name="ck_asset_review_time"),
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id", ondelete="RESTRICT"), index=True)
@@ -73,6 +80,19 @@ class PostAsset(Base):
     generation_model: Mapped[str] = mapped_column(String(150))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Phase 8A.1 generation provenance and review. NULL on assets created before this release.
+    parent_asset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    generation_mode: Mapped[str | None] = mapped_column(String(8))
+    prompt_version: Mapped[str | None] = mapped_column(String(40))
+    generation_options: Mapped[dict | None] = mapped_column(JSONB)
+    provider_request_id: Mapped[str | None] = mapped_column(String(200))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    perceptual_hash: Mapped[str | None] = mapped_column(String(16))
+    quality_status: Mapped[str | None] = mapped_column(String(20))
+    quality_report: Mapped[dict | None] = mapped_column(JSONB)
+    review_decision: Mapped[str | None] = mapped_column(String(10))
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PostVersion(Base):

@@ -7,6 +7,7 @@ from app.api.onboarding import storage,request_policy
 from app.core.permissions import company_access
 from app.core.intelligence_config import ai_settings
 from app.models.intelligence import AIJob,Competitor,CompetitorResearch
+from app.models.onboarding import WorkspaceMember
 from uuid import uuid5
 from pydantic import ValidationError
 from sqlalchemy import func
@@ -16,7 +17,7 @@ from app.schemas.intelligence import (JobRequest,AIJobResponse,CompetitorCreate,
 from app.services import ai_queue,competitor_intelligence as service
 from app.services.onboarding import transaction
 from app.services.extraction_jobs import now
-from app.services import gemini_search
+from app.services import ai_provider, gemini_search
 from app.services.extraction_errors import ExtractionError
 
 router=APIRouter(prefix="/companies/{company_id}",tags=["Competitor intelligence"],dependencies=[Depends(request_policy)])
@@ -36,34 +37,57 @@ def job_access(db,company_id,job_id,kind=None):
 
 @router.get("/ai-capabilities")
 def capabilities(company_id:UUID,user=Depends(current_user),db=Depends(storage)):
-    company_access(db,user,company_id)
-    available = gemini_search.configured() if ai_settings.search_provider == "gemini" else gemini_search.brave_enabled()
-    return {"search_available": available, "search_provider": ai_settings.search_provider,
-            "search_mode": "display_only" if ai_settings.search_provider == "gemini" else "licensed_persistence",
+    from app.services.brand_social import sources_for
+    company = company_access(db,user,company_id)
+    role = db.scalar(select(WorkspaceMember.role).where(WorkspaceMember.workspace_id == company.workspace_id, WorkspaceMember.user_id == user.id))
+    display_only = ai_settings.search_provider != "brave"
+    available = ai_provider.search_configured() if display_only else gemini_search.brave_enabled()
+    return {"search_available": available, "search_provider": ai_provider.name() if display_only else ai_settings.search_provider,
+            "ai_provider": ai_provider.name(), "ai_provider_label": ai_provider.label(),
+            "text_available": ai_provider.text_configured(),
+            "can_manage_competitors": role in {"owner", "admin"},
+            "max_approved_competitors": ai_settings.max_approved_competitors,
+            "max_bulk_research": ai_settings.max_bulk_research,
+            "content_eligible_competitor_ids": [item["competitor_id"] for item in service.approved_insights(db, company_id)],
+            "published_social_sources": [source.platform for source in sources_for(company_id)],
+            "search_mode": "display_only" if display_only else "licensed_persistence",
             "search_state": "configured_requires_model_access" if available else "search_provider_not_configured",
             "brave_discovery_available": gemini_search.brave_enabled(),
-            "image_available":bool(ai_settings.gemini_image_model),"image_state":"configured_requires_model_access" if ai_settings.gemini_image_model else "image_provider_not_configured"}
+            "image_available":ai_provider.image_configured(),"image_state":"configured_requires_model_access" if ai_provider.image_configured() else "image_provider_not_configured",
+            **image_capabilities(company)}
+
+
+def image_capabilities(company):
+    """Creative controls the Studio can offer for this company (no provider call)."""
+    from app.services import image_prompt
+    context = service.brand_context(company, require_confirmed=False)
+    profile = image_prompt.industry_profile(context)
+    return {"image_review_enabled": bool(ai_provider.image_configured() and ai_settings.image_review),
+            "image_edit_enabled": bool(ai_provider.image_configured() and ai_settings.image_edit_enabled),
+            "image_prompt_version": image_prompt.PROMPT_VERSION,
+            "industry_category": profile[0], "recommended_styles": list(profile[2]),
+            "visual_styles": [{"id": key, "label": label} for key, (label, _) in image_prompt.STYLES.items()]}
 
 
 @router.post("/competitor-search", response_model=gemini_search.GroundedAnswer)
 async def grounded_search(company_id:UUID, data:JobRequest, user=Depends(current_user), db=Depends(storage)):
     company = company_access(db, user, company_id, True)
     context = service.brand_context(company)
-    if not gemini_search.configured():
-        raise HTTPException(503, "search_provider_not_configured: Configure Gemini or use independent manual research.")
-    request_id = gemini_search.begin_request(db, company, user, data.request_key, context)
+    if not ai_provider.search_configured():
+        raise HTTPException(503, f"search_provider_not_configured: Configure {ai_provider.label()} web search or use independent manual research.")
+    request_id = gemini_search.begin_request(db, company, user, data.request_key, context, provider=ai_provider.name(), model=ai_provider.research_model() if ai_provider.is_openai() else None)
     # begin_request commits and releases all database locks before network I/O.
-    provider = gemini_search.GeminiGroundedSearchProvider()
+    provider = ai_provider.search_provider()
     try:
         answer = await provider.search(context)
     except BaseException as exc:
-        error = exc if isinstance(exc, ExtractionError) else ExtractionError("search_unavailable", "Google Search could not complete. Use independent manual research or try later.")
-        gemini_search.finish_request(db, request_id, provider.usage, error)
+        error = exc if isinstance(exc, ExtractionError) else ExtractionError("search_unavailable", "Web search could not complete. Use independent manual research or try later.")
+        gemini_search.finish_request(db, request_id, provider.usage, error, provider=ai_provider.name())
         if isinstance(exc, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
             raise
         status = 429 if error.code == "search_rate_limited" else 502
         raise HTTPException(status, f"{error.code}: {error.message}") from None
-    if not gemini_search.finish_request(db, request_id, provider.usage):
+    if not gemini_search.finish_request(db, request_id, provider.usage, provider=ai_provider.name()):
         raise HTTPException(409, "Search was cancelled or expired. No results were saved.")
     return answer
 
@@ -73,7 +97,7 @@ def history(company_id:UUID,kind:str|None=None,limit:int=Query(20,ge=1,le=100),o
     company_access(db,user,company_id)
     query=select(AIJob).where(AIJob.company_id==company_id)
     if kind:query=query.where(AIJob.kind==kind)
-    return db.scalars(query.order_by(AIJob.created_at.desc()).limit(limit).offset(offset)).all()
+    return db.scalars(query.order_by(AIJob.created_at.desc(), AIJob.id).limit(limit).offset(offset)).all()
 
 
 @router.get("/ai-jobs/{job_id}",response_model=AIJobResponse)
@@ -96,7 +120,7 @@ def cancel(company_id:UUID,job_id:UUID,user=Depends(current_user),db=Depends(sto
 def discover(company_id:UUID,data:JobRequest,user=Depends(current_user),db=Depends(storage)):
     company=company_access(db,user,company_id,True)
     context=service.brand_context(company)
-    if not gemini_search.brave_enabled():raise HTTPException(503,"search_provider_not_configured: Persistent automatic discovery is disabled. Use display-only Gemini search or independent manual entry; Brave requires a licensed configuration.")
+    if not gemini_search.brave_enabled():raise HTTPException(503,"search_provider_not_configured: Persistent automatic discovery is disabled. Use display-only web search or independent manual entry; Brave requires a licensed configuration.")
     return ai_queue.enqueue(db,company,user,"competitor_discovery",data.request_key,{"context":context,"provider":"brave"})
 
 

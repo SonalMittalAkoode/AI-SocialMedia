@@ -30,7 +30,7 @@ test("manual competitors persist, approve, reject and survive refresh", async ({
   ).toBeVisible();
   await page.getByRole("button", { name: "View insights for Evidence Business" }).click();
   await expect(page.getByText(/Research unavailable/)).toBeVisible();
-  await page.getByRole("dialog").getByRole("button", { name: "Reject", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Reject competitor", exact: true }).click();
   await expect(page.getByRole("dialog").getByText("Rejected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close dialog" }).click();
   await expect(

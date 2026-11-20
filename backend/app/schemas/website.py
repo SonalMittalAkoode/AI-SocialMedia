@@ -15,9 +15,11 @@ class WebsitePage(Schema):
     cleaned_text: str = Field(max_length=12000)
     structured_data: list[dict[str, str]] = Field(max_length=10)
     contacts: list[str] = Field(default_factory=list, max_length=20)
+    contact_details: dict[str, str] = Field(default_factory=dict, max_length=5)
     social_links: dict[str, str] = Field(default_factory=dict, max_length=4)
     logo_candidates: list[dict[str,str]] = Field(default_factory=list, max_length=5)
     style_colors: list[str] = Field(default_factory=list, max_length=8)
+    stylesheet_urls: list[str] = Field(default_factory=list, max_length=2)
 
 
 class WebsiteContent(Schema):

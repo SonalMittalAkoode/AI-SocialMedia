@@ -14,6 +14,8 @@ from app.models import content  # noqa: F401
 from app.models import scheduling  # noqa: F401
 from app.models import schedule_events  # noqa: F401
 from app.models import brand_logo  # noqa: F401
+from app.models import social_accounts  # noqa: F401
+from app.models import trends  # noqa: F401
 
 
 config = context.config

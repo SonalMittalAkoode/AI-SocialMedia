@@ -10,7 +10,8 @@ const sourceURL = z
   });
 export const groundedAnswerSchema = z
   .object({
-    provider: z.literal("gemini"),
+    // "gemini": Google grounded answer with required Search Suggestions; "openai": web search with url citations.
+    provider: z.enum(["gemini", "openai"]),
     display_only: z.literal(true),
     text: z.string().min(1).max(30000),
     sources: z
@@ -27,9 +28,11 @@ export const groundedAnswerSchema = z
       )
       .min(1)
       .max(100),
-    search_suggestions_html: z.string().min(1).max(100000),
+    search_suggestions_html: z.string().max(100000),
   })
   .superRefine((data, ctx) => {
+    if (data.provider === "gemini" && !data.search_suggestions_html)
+      ctx.addIssue({ code: "custom", path: ["search_suggestions_html"], message: "Google Search Suggestions are required" });
     data.citations.forEach((citation, index) => {
       if (
         citation.start >= citation.end ||
@@ -48,14 +51,22 @@ export type GroundedAnswer = z.infer<typeof groundedAnswerSchema>;
 
 // No browser storage, cache, automatic retry, job-result endpoint or import API.
 export async function searchCompetitors(company: string, signal: AbortSignal) {
+  return groundedSearch(company, "competitor-search", {}, signal);
+}
+
+export async function searchTrends(company: string, query: { topic: string; days: number; note_id?: string }, signal: AbortSignal) {
+  return groundedSearch(company, "trend-search", query, signal);
+}
+
+async function groundedSearch(company: string, path: string, query: object, signal: AbortSignal) {
   const response = await fetch(
-    `${API_URL}/companies/${company}/competitor-search`,
+    `${API_URL}/companies/${company}/${path}`,
     {
       method: "POST",
       credentials: "include",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ request_key: crypto.randomUUID() }),
+      body: JSON.stringify({ ...query, request_key: crypto.randomUUID() }),
       signal: AbortSignal.any([signal, AbortSignal.timeout(95000)]),
     },
   );

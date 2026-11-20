@@ -11,67 +11,9 @@ import {
   Empty,
 } from "@/components/ui";
 import { useStore } from "@/store/provider";
-import { platforms } from "@/data/fixtures";
-import {
-  Instagram,
-  Facebook,
-  Linkedin,
-  Link2,
-  LogOut,
-  Check,
-  Moon,
-} from "lucide-react";
-export function Accounts() {
-  const [selected, setSelected] = useState("");
-  return (
-    <>
-      <PageHeading
-        eyebrow="INTEGRATIONS"
-        title="Social Accounts"
-        description="Social account connections are not available yet. Review the requirements for each platform below."
-      />
-      <div className="account-grid">
-        {platforms.map((p, i) => {
-          const Icon = [Instagram, Facebook, Linkedin, Link2][i];
-          return (
-            <article className="panel account-card" key={p}>
-              <div className="row-between">
-                <div className={`platform-logo platform-logo-${i}`}>
-                  <Icon size={27} />
-                </div>
-                <Badge>Not connected</Badge>
-              </div>
-              <h2>{p}</h2>
-              <p>
-                A future integration will request permission to read your
-                profile, manage content, and retrieve analytics.
-              </p>
-              <Button variant="secondary" onClick={() => setSelected(p)}>
-                <Link2 size={15} /> Integration requirements
-              </Button>
-              <small>Account connection is not available yet.</small>
-            </article>
-          );
-        })}
-      </div>
-      <Modal
-        open={!!selected}
-        onOpenChange={(o) => !o && setSelected("")}
-        title={`${selected} integration requirements`}
-        description="Account authorization is not implemented yet. No account has been connected."
-      >
-        <p>
-          No connection has been made. Production integration will require an
-          approved platform application, secure OAuth, and backend token
-          storage.
-        </p>
-        <Button onClick={() => setSelected("")}>
-          Got it <Check size={15} />
-        </Button>
-      </Modal>
-    </>
-  );
-}
+import { LogOut, Moon } from "lucide-react";
+/** Phase 8A: real, company-scoped social account connections. */
+export { SocialAccounts as Accounts } from "./social-accounts";
 export function Analytics() {
   return (
     <>

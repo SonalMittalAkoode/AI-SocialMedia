@@ -97,6 +97,7 @@ class CompanyFields(Schema):
     state: Annotated[str, StringConstraints(strip_whitespace=True, max_length=150)] | None = None
     public_email: Annotated[str, StringConstraints(strip_whitespace=True, max_length=254)] | None = None
     public_phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)] | None = None
+    office_address: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
 
     @field_validator("website_url")
     @classmethod
@@ -108,7 +109,7 @@ class CompanyFields(Schema):
     def social(cls, value):
         return social_url(value)
 
-    @field_validator("industry", "business_type", "description", "country", "city")
+    @field_validator("industry", "business_type", "description", "country", "city", "office_address")
     @classmethod
     def empty_is_unknown(cls, value):
         return value or None
@@ -232,3 +233,33 @@ class OnboardingStepUpdate(Revision):
 class OnboardingCompleteStepRequest(Revision):
     step: Step
     demo_acknowledged: bool = False
+
+
+class WebsiteBrandReview(Schema):
+    job_id: UUID
+
+
+class OnboardingGoals(Revision):
+    preferences_revision: int = Field(ge=1)
+    goal: Literal["brand_awareness", "lead_generation", "audience_engagement"]
+    platforms: list[Platform] = Field(min_length=1, max_length=4)
+    voice: Literal["professional", "friendly", "bold", "playful"]
+
+    @field_validator("platforms")
+    @classmethod
+    def unique_platforms(cls, value):
+        return ContentPreferencesUpdate.unique(value)
+
+
+class FirstPostHandoff(Schema):
+    job_id: UUID | None = None
+    error: str | None = None
+    retryable: bool = False
+    pending: bool = False
+
+
+class RetryFirstPost(Schema):
+    # Compare against the job the user actually saw fail. A late replay must
+    # never restart a newer attempt, even if that attempt has also failed.
+    job_id: UUID | None = None
+    text_only: bool = False

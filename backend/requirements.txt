@@ -6,6 +6,7 @@ argon2-cffi==25.1.0
 argon2-cffi-bindings==26.1.0
 cffi==2.1.1
 click==8.5.1
+cryptography==50.0.2
 dnspython==2.9.2
 email-validator==2.3.0
 fastapi==0.162.5
@@ -38,4 +39,5 @@ beautifulsoup4==4.14.3
 httpx==0.28.1
 httpcore==1.0.9
 google-genai==3.3.0
+openai==3.57.0
 Pillow==12.3.0

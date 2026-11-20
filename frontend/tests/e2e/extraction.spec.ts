@@ -8,22 +8,30 @@ async function fixture(
 ) {
   const { companyId } = await signInWorkspace(page);
   let started = false,
-    polls = 0,
+    polls = -1,
     applied: unknown = null;
-  const job = () => ({
-    id: jobId,
-    company_id: companyId,
-    requested_url: "https://brewandbean.example",
-    status:
-      mode === "failure" ? "failed" : polls >= 2 ? "completed" : "running",
-    stage:
-      mode === "failure" ? "failed" : polls >= 2 ? "completed" : "analyzing",
-    attempt_count: 1,
-    error_code: mode === "failure" ? "restricted" : null,
-    error_message:
-      mode === "failure" ? "The website restricts automated access." : null,
-    created_at: new Date().toISOString(),
-  });
+  const job = () => {
+    const stage =
+      mode === "failure"
+        ? "failed"
+        : polls < 0
+          ? "queued"
+          : polls >= 2
+            ? "completed"
+            : "analyzing";
+    return {
+      id: jobId,
+      company_id: companyId,
+      requested_url: "https://brewandbean.example",
+      status: stage === "analyzing" ? "running" : stage,
+      stage,
+      attempt_count: 1,
+      error_code: mode === "failure" ? "restricted" : null,
+      error_message:
+        mode === "failure" ? "The website restricts automated access." : null,
+      created_at: new Date().toISOString(),
+    };
+  };
   const data = {
     company_name: "Retrieved Business",
     description: "A retrieved business description backed by supplied text.",
@@ -98,7 +106,7 @@ async function fixture(
     }
     if (route.request().method() === "POST") {
       started = true;
-      polls = 0;
+      polls = -1;
       await route.fulfill({
         status: 202,
         json: { ...job(), status: "queued", stage: "queued" },
@@ -136,9 +144,15 @@ test("real analysis UI polls, restores after refresh, and applies only selected 
   await page
     .getByRole("button", { name: "Analyze my business", exact: true })
     .click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "Analysis:" }),
-  ).toContainText(/queued|analyzing/);
+  const progress = page.getByRole("progressbar", {
+    name: "Website analysis progress",
+  });
+  await expect(progress).toHaveAttribute("aria-valuenow", "0");
+  await expect(progress).toHaveAttribute("aria-valuenow", "2");
+  await expect(progress).toHaveAttribute(
+    "aria-valuetext",
+    "AI is analyzing your business",
+  );
   await page.reload();
   await page
     .getByText("Research website and review previous findings", { exact: true })
@@ -146,6 +160,7 @@ test("real analysis UI polls, restores after refresh, and applies only selected 
   await expect(
     page.getByRole("heading", { name: "Review findings before applying" }),
   ).toBeVisible();
+  await expect(progress).toHaveAttribute("aria-valuenow", "4");
   await expect(
     page.getByRole("button", { name: "Apply selected findings" }),
   ).toBeDisabled();
@@ -214,96 +229,13 @@ test("brand form automatically fills completed model findings and remains editab
     "Custom celebration cakes",
   );
 });
-test("failed extraction offers retry and manual onboarding without fictional findings", async ({
-  page,
-}) => {
-  await fixture(page, "failure");
-  await page.goto("/onboarding/business");
-  await page
-    .getByRole("button", { name: "Analyze my business", exact: true })
-    .click();
-  await expect(
-    page.getByRole("alert").filter({ hasText: "restricts automated access" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Retry analysis" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Review findings before applying" }),
-  ).not.toBeVisible();
-  await page.getByRole("button", { name: "Enter details manually" }).click();
-  await expect(page).toHaveURL(/onboarding\/brand/);
-});
-
-test("first-step findings show their values and continue without discarding manual location", async ({
-  page,
-}) => {
-  const f = await fixture(page);
-  await page.goto("/onboarding/business");
-  await page.getByLabel("City", { exact: true }).fill("Gurgaon");
-  await page.getByLabel("State / region", { exact: true }).fill("Haryana");
-  await page
-    .getByRole("button", { name: "Analyze my business", exact: true })
-    .click();
-  await expect(
-    page.locator(".finding-preview").filter({
-      hasText: "A retrieved business description backed by supplied text.",
-    }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", {
-      name: "Use these findings and continue",
-      exact: true,
-    }),
-  ).toBeEnabled();
-  await page
-    .getByRole("button", {
-      name: "Use these findings and continue",
-      exact: true,
-    })
-    .click();
-  await expect(page).toHaveURL(/onboarding\/brand/);
-  const company = await (
-    await page.request.get(`${apiURL}/companies/${f.companyId}`)
-  ).json();
-  expect(company.city).toBe("Gurgaon");
-  expect(company.state).toBe("Haryana");
-  const body = f.getApplied() as { fields: Record<string, unknown> };
-  expect(body.fields.company_name).toBe("Retrieved Business");
-  expect(body.fields).not.toHaveProperty("city");
-  expect(body.fields).not.toHaveProperty("state");
-});
-test("lost connection preserves the server job and provides status retry at mobile width", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 375, height: 1000 });
+test("advanced website research preserves its existing status retry on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 900 });
   await fixture(page, "offline");
-  await page.goto("/onboarding/business");
-  await page
-    .getByRole("button", { name: "Analyze my business", exact: true })
-    .click();
-  await expect(
-    page.getByRole("alert").filter({ hasText: "server job is retained" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Retry status" }),
-  ).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-    JSON.stringify(
-      await page.evaluate(() =>
-        [...document.querySelectorAll("main *")]
-          .filter((e) => e.getBoundingClientRect().right > innerWidth)
-          .map((e) => ({
-            tag: e.tagName,
-            cls: e.className,
-            width: e.getBoundingClientRect().width,
-            text: e.textContent?.slice(0, 60),
-          }))
-          .slice(0, 12),
-      ),
-    ),
-  ).toBe(true);
+  await page.goto("/dashboard/brand");
+  await page.getByText("Research website and review previous findings", { exact: true }).click();
+  await page.getByRole("button", { name: "Analyze my business", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "server job is retained" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry status" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

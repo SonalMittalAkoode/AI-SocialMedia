@@ -62,6 +62,7 @@ class Company(Editable, Base):
     state: Mapped[str | None] = mapped_column(String(150))
     public_email: Mapped[str | None] = mapped_column(String(254))
     public_phone: Mapped[str | None] = mapped_column(String(100))
+    office_address: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(12), default="draft", server_default="draft")
     timezone: Mapped[str | None] = mapped_column(String(100))
 
@@ -125,6 +126,7 @@ class OnboardingProgress(Base):
     completed_steps: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     demo_steps: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     demo_completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    first_post: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(16), default="in_progress", server_default="in_progress")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

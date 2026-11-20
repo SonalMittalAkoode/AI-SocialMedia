@@ -22,7 +22,7 @@ export function PlatformChart() {
     name,
     value: state.posts.filter((p) => p.platform === name).length,
   }));
-  const colors = ["#ff2dab", "#7495d0", "#d4ee3e", "#ae8cce"];
+  const colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"];
   if (!state.posts.length)
     return (
       <p className="muted">
@@ -53,8 +53,8 @@ export function PlatformChart() {
             </Pie>
             <Tooltip
               contentStyle={{
-                background: "#202020",
-                border: "1px solid #404040",
+                background: "var(--card)",
+                border: "1px solid var(--border-strong)",
                 borderRadius: 8,
               }}
             />
@@ -110,42 +110,42 @@ export function TrendChart({
             >
               <stop
                 offset="0%"
-                stopColor={engagement ? "#d4ee3e" : "#ff2dab"}
+                stopColor={engagement ? "var(--chart-2)" : "var(--chart-1)"}
                 stopOpacity={0.21}
               />
-              <stop offset="100%" stopColor="#ff2dab" stopOpacity={0} />
+              <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
             vertical={false}
-            stroke="#292929"
+            stroke="var(--chart-grid)"
             strokeDasharray="3 5"
           />
           <XAxis
             dataKey="label"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#808087", fontSize: 11 }}
+            tick={{ fill: "var(--chart-axis)", fontSize: 11 }}
             dy={10}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#808087", fontSize: 11 }}
+            tick={{ fill: "var(--chart-axis)", fontSize: 11 }}
           />
           <Tooltip
             contentStyle={{
-              background: "#202020",
-              border: "1px solid #404040",
+              background: "var(--card)",
+              border: "1px solid var(--border-strong)",
               borderRadius: 10,
-              color: "#fff",
+              color: "var(--foreground)",
             }}
           />
           <Area
             isAnimationActive={false}
             type="monotone"
             dataKey={engagement ? "engagement" : "generated"}
-            stroke={engagement ? "#d4ee3e" : "#ff2dab"}
+            stroke={engagement ? "var(--chart-2)" : "var(--chart-1)"}
             strokeWidth={2.5}
             fill={`url(#${engagement ? "engagementGradient" : "contentGradient"})`}
           />
@@ -172,20 +172,20 @@ export function CategoryChart() {
         >
           <XAxis
             dataKey="name"
-            tick={{ fill: "#aaa", fontSize: 10 }}
+            tick={{ fill: "var(--chart-axis)", fontSize: 10 }}
             axisLine={false}
             tickLine={false}
           />
           <Tooltip
             contentStyle={{
-              background: "#202020",
-              border: "1px solid #404040",
+              background: "var(--card)",
+              border: "1px solid var(--border-strong)",
             }}
           />
           <Bar
             isAnimationActive={false}
             dataKey="posts"
-            fill="#d4ee3e"
+            fill="var(--chart-2)"
             radius={[5, 5, 0, 0]}
           />
         </BarChart>

@@ -1,7 +1,7 @@
 "use client";
 /* Server jobs are an external system; the effect synchronizes their status. */
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/store/provider";
 import { Button, Textarea, Badge } from "@/components/ui";
 import * as api from "@/lib/brand-extraction-api";
@@ -25,6 +25,7 @@ export const findingLabels: Record<api.FindingField, string> = {
   state: "State / region",
   public_email: "Public email",
   public_phone: "Public phone",
+  office_address: "Office address",
   value_proposition: "Value proposition",
   content_pillars: "Content pillars",
   suggested_content_tone: "Suggested content tone",
@@ -39,6 +40,14 @@ const arrayFields = new Set([
   "content_pillars",
   "suggested_content_tone",
 ]);
+const extractionStages: Record<string, { step: number; label: string }> = {
+  queued: { step: 0, label: "Waiting for the research worker" },
+  fetching: { step: 1, label: "Reading your public website" },
+  cleaning: { step: 1, label: "Preparing website content" },
+  analyzing: { step: 2, label: "AI is analyzing your business" },
+  saving: { step: 3, label: "Saving your findings" },
+  completed: { step: 4, label: "Ready to review" },
+};
 export function hasFinding(value: unknown) {
   return (
     value != null &&
@@ -78,8 +87,10 @@ export function parseApproved(
 }
 export function BrandExtraction({
   onApplied,
+  onNewResult,
 }: {
   onApplied?: () => Promise<void>;
+  onNewResult?: (jobId: string) => void;
 }) {
   const {
     companyId,
@@ -99,8 +110,11 @@ export function BrandExtraction({
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [chosen, setChosen] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [queueDelayed, setQueueDelayed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [applied, setApplied] = useState(false);
+  const started = useRef<string | null>(null);
   const [existing, setExisting] = useState<
     Partial<Record<api.FindingField, unknown>>
   >({});
@@ -122,6 +136,10 @@ export function BrandExtraction({
         }
         while (!controller.signal.aborted) {
           setJob(current);
+          setQueueDelayed(
+            current.status === "queued" &&
+              Date.now() - Date.parse(current.created_at) >= 30_000,
+          );
           if (current.status === "completed") {
             const loaded = await api.getExtractionResult(
               companyId!,
@@ -147,8 +165,13 @@ export function BrandExtraction({
               state: saved.company.state,
               public_email: saved.company.public_email,
               public_phone: saved.company.public_phone,
+              office_address: saved.company.office_address,
             });
             setResult(loaded);
+            if (started.current === current.id) {
+              started.current = null;
+              onNewResult?.(current.id);
+            }
             setEdits(
               Object.fromEntries(
                 Object.keys(findingLabels).map((key) => {
@@ -170,15 +193,15 @@ export function BrandExtraction({
           if (current.status === "failed" || current.status === "cancelled")
             return;
           await new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, 1800);
-            controller.signal.addEventListener(
-              "abort",
-              () => {
-                clearTimeout(timer);
-                resolve();
-              },
-              { once: true },
-            );
+            const cancel = () => {
+              clearTimeout(timer);
+              resolve();
+            };
+            timer = setTimeout(() => {
+              controller.signal.removeEventListener("abort", cancel);
+              resolve();
+            }, 1800);
+            controller.signal.addEventListener("abort", cancel, { once: true });
           });
           if (controller.signal.aborted) return;
           current = await api.getExtraction(
@@ -194,29 +217,31 @@ export function BrandExtraction({
     }
     setResult(null);
     setJob(null);
+    setQueueDelayed(false);
     setApplied(false);
     void load();
     return () => {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [companyId, refresh, chosen]);
+  }, [companyId, refresh, chosen, onNewResult]);
   async function start(reanalyze = false) {
-    setBusy(true);
+    setStarting(true);
     setError("");
     try {
-      const id = companyId || (await prepareExtraction());
+      const id = await prepareExtraction();
       const created = await api.startExtraction(
         id,
         state.workspace.company.website,
         reanalyze,
       );
+      started.current = created.id;
       setChosen(created.id);
       setRefresh((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Analysis could not start.");
     } finally {
-      setBusy(false);
+      setStarting(false);
     }
   }
   async function apply(fields = selected) {
@@ -241,6 +266,13 @@ export function BrandExtraction({
     }
   }
   const running = job?.status === "queued" || job?.status === "running";
+  const progress = starting
+    ? { step: 0, label: "Submitting your website" }
+    : job?.status === "completed" && !result && !error
+      ? { step: 3, label: "Loading your findings" }
+      : job && (running || result)
+        ? (extractionStages[job.stage] ?? extractionStages[job.status] ?? null)
+        : null;
   const availableFields = result
     ? (Object.keys(findingLabels) as api.FindingField[]).filter((field) =>
         hasFinding(result.extracted_data[field]),
@@ -250,24 +282,42 @@ export function BrandExtraction({
     <section className="panel" aria-label="Website brand research">
       <h3>Research your public website</h3>
       <p>
-        Website content is sent to Gemini for analysis. Findings stay separate
+        Website content is sent to the configured AI provider for analysis. Findings stay separate
         until you select and apply them. Manual entry is always available.
       </p>
       <Button
         onClick={() => void start()}
-        disabled={busy || companyBusy || running}
+        disabled={starting || busy || companyBusy || running}
       >
         Analyze my business
       </Button>
-      {job && (
-        <p role="status">
-          Analysis: {job.stage}
-          {job.attempt_count > 1 ? ` · retry attempt ${job.attempt_count}` : ""}
-          .{" "}
-          {running
-            ? "You can leave and return; the server retains this job."
-            : ""}
-        </p>
+      {progress && (
+        <div className="extraction-progress">
+          <p role="status">
+            Analysis: {progress.label}
+            {running && job.attempt_count > 1
+              ? ` (attempt ${job.attempt_count})`
+              : ""}
+          </p>
+          <div
+            className="progress-track"
+            role="progressbar"
+            aria-label="Website analysis progress"
+            aria-valuemin={0}
+            aria-valuemax={4}
+            aria-valuenow={progress.step}
+            aria-valuetext={progress.label}
+          >
+            <div style={{ width: `${progress.step * 25}%` }} />
+          </div>
+          {running && (
+            <p className="muted">
+              {queueDelayed
+                ? "This is taking longer than usual. Check that the research worker is running, or enter your details manually."
+                : "You can leave and return while your analysis runs."}
+            </p>
+          )}
+        </div>
       )}
       {job?.status === "failed" && (
         <div role="alert" className="error-box">
@@ -275,7 +325,7 @@ export function BrandExtraction({
           <p>No findings were applied.</p>
           <Button
             variant="secondary"
-            disabled={busy || companyBusy}
+            disabled={starting || busy || companyBusy}
             onClick={() => void start(true)}
           >
             Retry analysis
@@ -418,7 +468,7 @@ export function BrandExtraction({
           </div>
           <Button
             variant="ghost"
-            disabled={busy || companyBusy || running}
+            disabled={starting || busy || companyBusy || running}
             onClick={() => void start(true)}
           >
             Reanalyze website

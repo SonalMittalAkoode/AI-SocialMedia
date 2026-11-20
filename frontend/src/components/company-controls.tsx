@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/store/provider";
 import { Button, Modal, Select } from "@/components/ui";
-export function DraftRecovery() {
+import type { DemoState } from "@/types";
+export function DraftRecovery({ onRestore }: { onRestore?: (draft: DemoState) => void } = {}) {
   const {
     recoverableDraft,
     recoverDraft,
@@ -56,7 +57,8 @@ export function DraftRecovery() {
           </Button>
           <Button
             onClick={() => {
-              recoverDraft();
+              if (onRestore && recoverableDraft) onRestore(recoverableDraft);
+              else recoverDraft();
               setOpen(false);
             }}
           >

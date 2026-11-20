@@ -12,6 +12,9 @@ from app.models.onboarding import Workspace, WorkspaceMember, Company
 from app.core.permissions import workspace_access, company_access
 from app.schemas.onboarding import WorkspaceCreate, WorkspaceUpdate, WorkspaceResponse, WorkspaceMemberResponse, CompanyCreate, CompanyUpdate, CompanyResponse, BrandProfileUpdate, BrandProfileResponse, ContentPreferencesUpdate, ContentPreferencesResponse, OnboardingProgressResponse, OnboardingStepUpdate, OnboardingCompleteStepRequest, Revision
 from app.services import onboarding as service
+from app.schemas.onboarding import FirstPostHandoff, OnboardingGoals, RetryFirstPost, WebsiteBrandReview
+from app.schemas.brand_extraction import StartExtraction
+from app.services import simplified_onboarding
 
 
 def request_policy(request: Request, response: Response):
@@ -132,3 +135,34 @@ def complete_step(company_id: UUID, data: OnboardingCompleteStepRequest, user: U
 @router.post("/companies/{company_id}/onboarding/complete", response_model=OnboardingProgressResponse)
 def complete(company_id: UUID, data: Revision, user: User = Depends(current_user), db: Session = Depends(storage)):
     return service.complete(db, company_access(db, user, company_id, True), data)
+
+
+@router.post("/companies/{company_id}/onboarding/website-brand", status_code=204)
+def website_brand(company_id: UUID, data: WebsiteBrandReview, user: User = Depends(current_user), db: Session = Depends(storage)):
+    simplified_onboarding.prepare_website_brand(db, company_access(db, user, company_id, True), data.job_id)
+    return Response(status_code=204)
+
+
+@router.post("/onboarding/validate-website")
+def validate_onboarding_website(data: StartExtraction, user: User = Depends(current_user)):
+    return {"url": data.url}
+
+
+@router.post("/companies/{company_id}/onboarding/finalize", response_model=FirstPostHandoff)
+def finalize(company_id: UUID, data: OnboardingGoals, user: User = Depends(current_user), db: Session = Depends(storage)):
+    return simplified_onboarding.finalize(db, company_access(db, user, company_id, True), user, data)
+
+
+@router.get("/companies/{company_id}/onboarding/first-post", response_model=FirstPostHandoff)
+def first_post(company_id: UUID, user: User = Depends(current_user), db: Session = Depends(storage)):
+    return simplified_onboarding.read_first_post(db, company_access(db, user, company_id))
+
+
+@router.post("/companies/{company_id}/onboarding/first-post", response_model=FirstPostHandoff)
+def retry_first_post(company_id: UUID, data: RetryFirstPost, user: User = Depends(current_user), db: Session = Depends(storage)):
+    return simplified_onboarding.retry(db, company_access(db, user, company_id, True), user, data)
+
+
+@router.get("/companies/{company_id}/onboarding/checklist")
+def setup_checklist(company_id: UUID, user: User = Depends(current_user), db: Session = Depends(storage)):
+    return simplified_onboarding.setup_checklist(db, company_access(db, user, company_id))

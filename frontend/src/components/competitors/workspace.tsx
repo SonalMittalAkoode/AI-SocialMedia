@@ -53,13 +53,28 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
   const { state, toast } = useStore();
   const data = useCompetitorData(companyId);
   const discovery = useDiscovery(companyId);
-  const [tab, setTab] = useState<Tab | null>(null),
+  const tabKey = `socialai-competitors-tab:${variant}:${companyId}`;
+  const [tab, updateTab] = useState<Tab | null>(() => {
+    try {
+      const saved = sessionStorage.getItem(tabKey);
+      if (saved === "discover" || saved === "mine" || (variant === "crm" && (saved === "queue" || saved === "approved"))) return saved;
+    } catch {}
+    return null;
+  }),
     [filters, setFilters] = useState<Filters>(EMPTY_FILTERS),
     [busy, setBusy] = useState(false),
     [adding, setAdding] = useState(false),
     [editing, setEditing] = useState<RealCompetitor | null>(null),
     [removing, setRemoving] = useState<RealCompetitor | null>(null),
     [detailId, setDetailId] = useState<string | null>(null);
+  const mutation = useRef(false);
+  const drawerTrigger = useRef<HTMLElement | null>(null);
+  const canManage = data.capabilities?.can_manage_competitors === true;
+  const canDiscover = canManage && data.searchAvailable;
+  function setTab(next: Tab) {
+    updateTab(next);
+    try { sessionStorage.setItem(tabKey, next); } catch {}
+  }
   const live = data.rows.filter((r) => !r.removed_at);
   // Default: the watchlist when one exists, otherwise discovery.
   const current: Tab = tab ?? (data.loaded && live.length ? "mine" : "discover");
@@ -75,6 +90,8 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
   };
 
   async function act(operation: () => Promise<unknown>, success?: string) {
+    if (!canManage || mutation.current) return false;
+    mutation.current = true;
     setBusy(true);
     try {
       await operation();
@@ -85,11 +102,18 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
       toast(e instanceof Error ? e.message : "Operation failed");
       return false;
     } finally {
+      mutation.current = false;
       setBusy(false);
     }
   }
   const actions: CompetitorActions = {
-    view: (row) => setDetailId(row.id),
+    canManage,
+    maxApproved: data.capabilities?.max_approved_competitors ?? 5,
+    maxBulk: data.capabilities?.max_bulk_research ?? 10,
+    view: (row) => {
+      drawerTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setDetailId(row.id);
+    },
     add: () => setAdding(true),
     edit: (row) => setEditing(row),
     remove: (row) => setRemoving(row),
@@ -98,12 +122,12 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
     select: (row, status) =>
       void act(
         () => companyRequest(companyId, `/competitors/${row.id}`, competitorSchema, { revision: row.revision, selection_status: status }, "PATCH"),
-        { approved: `${row.name} approved. Its research now informs AI content.`, rejected: `${row.name} rejected.`, suggested: `${row.name} moved back to review.` }[status],
+        { approved: `${row.name} approved.`, rejected: `${row.name} rejected.`, suggested: `${row.name} moved back to review.` }[status],
       ),
     research: (ids, force = false) =>
-      void act(
+      act(
         () => companyRequest(companyId, "/competitors/research-batch", batchSchema, { request_key: crypto.randomUUID(), competitor_ids: ids, force }),
-        `Research queued for ${ids.length} competitor${ids.length === 1 ? "" : "s"}. It continues in the background.`,
+        `Research requested for ${ids.length} competitor${ids.length === 1 ? "" : "s"}.`,
       ),
   };
   const cancel = (job: AIJob) =>
@@ -136,28 +160,30 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
         <div>
           {variant === "crm" && (
             <>
-              <h1>Know your competition. Stay ahead.</h1>
-              <p>Discover relevant businesses, understand their positioning, and uncover new opportunities for your brand.</p>
+              <h1>Competitor Intelligence</h1>
+              <p>Understand your competition. Discover opportunities. Create smarter content.</p>
             </>
           )}
           <p className="cx-company">
             <Building2 size={14} aria-hidden />
             <strong>{company.name || "Your company"}</strong>
             {company.industry && <span>· {company.industry}</span>}
+            {facts.location && <span>· {facts.location}</span>}
           </p>
         </div>
         <div className="cx-header-actions">
           <Button
-            disabled={!data.searchAvailable || discovery.busy}
+            aria-label="Discover competitors from page header"
+            disabled={!canDiscover || discovery.busy}
             onClick={() => {
               setTab("discover");
               discovery.run();
             }}
           >
             {discovery.busy ? <Loader2 size={14} className="ci-spin" /> : null}
-            Discover competitors ✦
+            Discover competitors
           </Button>
-          <Button variant="secondary" onClick={() => setAdding(true)}>
+          <Button variant="secondary" disabled={!canManage} onClick={() => setAdding(true)}>
             <Plus size={14} /> Add competitor
           </Button>
         </div>
@@ -169,7 +195,7 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
             [
               [Building2, "Saved competitors", live.length, "Independently sourced records"],
               [Microscope, "Researched competitors", researched.length, "Website research saved"],
-              [BadgeCheck, "Approved competitors", approved.length, "Reviewed for AI content (max 5)"],
+              [BadgeCheck, "Approved competitors", approved.length, "Reviewed and approved"],
               [Timer, "Research in progress", data.activeJobs.length, "Queued or running now"],
             ] as const
           ).map(([Icon, label, value, note]) => (
@@ -179,7 +205,7 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
               </span>
               <div>
                 <span>{label}</span>
-                <strong>{data.loaded ? value : "–"}</strong>
+                <strong>{data.capabilities ? value : "–"}</strong>
                 <small>{note}</small>
               </div>
             </div>
@@ -217,19 +243,21 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
         ))}
       </div>
 
-      <div role="tabpanel" id={`cx-panel-${current}`} aria-labelledby={`cx-tab-${current}`}>
+      <div role="tabpanel" id="cx-panel-mine" aria-labelledby="cx-tab-mine" hidden={current !== "mine"}>
+        <MyCompetitors rows={data.rows} latest={data.latest} loaded={data.loaded} actions={actions} busy={busy} filters={filters} setFilters={setFilters} />
+      </div>
+      {current !== "mine" && <div role="tabpanel" id={`cx-panel-${current}`} aria-labelledby={`cx-tab-${current}`}>
         {current === "discover" && (
-          <DiscoverPanel company={facts} available={data.searchAvailable} discovery={discovery} onAdd={() => setAdding(true)} />
-        )}
-        {current === "mine" && (
-          <MyCompetitors rows={data.rows} latest={data.latest} loaded={data.loaded} actions={actions} busy={busy} filters={filters} setFilters={setFilters} truncated={data.truncated} />
+          <DiscoverPanel company={facts} available={canDiscover} configured={data.searchAvailable} canManage={canManage} loaded={data.loaded} discovery={discovery} onAdd={() => setAdding(true)} />
         )}
         {current === "queue" && (
           <ResearchQueue
             jobs={data.jobs}
             rows={data.rows}
             busy={busy}
-            onRetry={(id) => actions.research([id])}
+            canManage={canManage}
+            loaded={data.loaded}
+            onRetry={(id) => actions.research([id], true)}
             onCancel={cancel}
             onView={actions.view}
             onShowCompetitors={() => setTab("mine")}
@@ -239,6 +267,8 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
           <ApprovedInsights
             rows={data.rows}
             latest={data.latest}
+            eligibleIds={data.capabilities?.content_eligible_competitor_ids ?? []}
+            loaded={data.loaded}
             onView={actions.view}
             onReview={() => {
               setFilters({ ...EMPTY_FILTERS, approval: "suggested", research: "researched" });
@@ -250,7 +280,7 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
             }}
           />
         )}
-      </div>
+      </div>}
 
       {variant === "onboarding" && (
         <p className="cx-info">
@@ -260,13 +290,14 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
       )}
 
       <AddCompetitors
+        maxBulk={actions.maxBulk}
         open={adding}
         onOpenChange={setAdding}
         companyId={companyId}
         onSaved={(result) => {
           data.reload();
           setTab("mine");
-          toast(result?.batch ? `Saved. Research queued for ${result.batch.total} competitor${result.batch.total === 1 ? "" : "s"}.` : "Competitor saved to your watchlist.");
+            toast(result?.batch ? `Saved. Research requested for ${result.batch.total} competitor${result.batch.total === 1 ? "" : "s"}.` : "Competitor saved to your watchlist.");
         }}
       />
       {editing && (
@@ -305,6 +336,11 @@ function Workspace({ companyId, variant }: { companyId: string; variant: "crm" |
           approvedCount={approved.length}
           busy={busy}
           onClose={() => setDetailId(null)}
+          restoreFocus={() => {
+            const trigger = drawerTrigger.current;
+            if (trigger?.isConnected) trigger.focus();
+            else tabRefs.current[tabs.findIndex((item) => item.id === current)]?.focus();
+          }}
         />
       )}
     </div>

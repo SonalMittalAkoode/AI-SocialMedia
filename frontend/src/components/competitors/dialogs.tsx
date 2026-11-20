@@ -10,24 +10,26 @@ import {
   parseCompetitorLines,
   RealCompetitor,
 } from "@/lib/intelligence-api";
-import { domainOf, MAX_BULK } from "./shared";
+import { domainOf } from "./shared";
 
 export function AddCompetitors({
   open,
   onOpenChange,
   companyId,
+  maxBulk,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   companyId: string;
+  maxBulk: number;
   onSaved: (result?: BulkResult) => void;
 }) {
   const [mode, setMode] = useState<"single" | "bulk">("single"),
     [name, setName] = useState(""),
     [url, setUrl] = useState(""),
     [lines, setLines] = useState(""),
-    // Research spends Gemini quota: opt-in for single adds, pre-selected for bulk.
+    // Research spends AI provider quota: opt-in for single adds, pre-selected for bulk.
     [researchNow, setResearchNow] = useState(false),
     [result, setResult] = useState<BulkResult | null>(null),
     [error, setError] = useState(""),
@@ -76,7 +78,7 @@ export function AddCompetitors({
       open={open}
       onOpenChange={close}
       title="Add a competitor"
-      description="Enter business websites you obtained independently of Gemini grounded search. Google grounded suggestions cannot be imported here. Duplicate websites are merged into the existing record."
+      description="Enter business websites you obtained independently of AI web search. Search suggestions cannot be imported here. Duplicate websites are merged into the existing record."
     >
       <div className="crm-tabs ci-mode" role="tablist" aria-label="Add mode">
         {(["single", "bulk"] as const).map((m) => (
@@ -118,15 +120,15 @@ export function AddCompetitors({
               onChange={(e) => setLines(e.target.value)}
             />
             <p className="muted">
-              {parsed.length} website{parsed.length === 1 ? "" : "s"} detected (maximum 20 per save, {MAX_BULK} researched at once).
+              {parsed.length} website{parsed.length === 1 ? "" : "s"} detected (maximum 20 per save, {maxBulk} researched at once).
             </p>
           </>
         )}
         <label className="ci-checkbox">
           <input type="checkbox" checked={researchNow} onChange={(e) => setResearchNow(e.target.checked)} />
-          Research automatically after saving (uses Gemini quota)
+          Research automatically after saving (uses AI quota)
         </label>
-        <Button type="submit" disabled={busy || (mode === "bulk" && (!parsed.length || (researchNow && parsed.length > MAX_BULK)))}>
+        <Button type="submit" disabled={busy || (mode === "bulk" && (!parsed.length || (researchNow && parsed.length > maxBulk)))}>
           {busy && <Loader2 size={14} className="ci-spin" />}
           {mode === "single" ? "Save competitor" : `Save ${parsed.length} competitors`}
         </Button>

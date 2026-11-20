@@ -10,7 +10,7 @@ from app.models.onboarding import Editable
 class AIJob(Base):
     __tablename__ = "ai_jobs"
     __table_args__ = (
-        CheckConstraint("kind IN ('competitor_discovery','competitor_research','content_generation','image_generation')", name="ck_ai_job_kind"),
+        CheckConstraint("kind IN ('competitor_discovery','competitor_research','content_generation','image_generation','trend_search')", name="ck_ai_job_kind"),
         CheckConstraint("status IN ('queued','running','completed','failed','cancelled')", name="ck_ai_job_status"),
         CheckConstraint("attempt_count BETWEEN 0 AND 3", name="ck_ai_job_attempts"),
         UniqueConstraint("company_id", "request_key", name="uq_ai_job_request"),

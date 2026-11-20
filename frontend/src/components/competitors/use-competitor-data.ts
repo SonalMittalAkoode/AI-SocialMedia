@@ -13,8 +13,28 @@ import {
 } from "@/lib/intelligence-api";
 
 export const PAGE_LIMIT = 100;
+const capabilitiesSchema = z.object({
+  search_available: z.boolean(),
+  can_manage_competitors: z.boolean().default(false),
+  max_approved_competitors: z.number().int().positive().default(5),
+  max_bulk_research: z.number().int().positive().default(10),
+  content_eligible_competitor_ids: z.array(z.uuid()).default([]),
+});
+
+async function collectPages<T extends { id: string }>(load: (offset: number) => Promise<T[]>) {
+  const rows = new Map<string, T>();
+  for (let offset = 0; ; offset += PAGE_LIMIT) {
+    const page = await load(offset);
+    for (const row of page) if (!rows.has(row.id)) rows.set(row.id, row);
+    if (page.length < PAGE_LIMIT) return [...rows.values()];
+  }
+}
 
 export type ResearchState = "researching" | "failed" | "researched" | "not_researched";
+
+export function hasCurrentResearch(row: RealCompetitor) {
+  return !!row.last_researched_at && ["verified", "partially_verified"].includes(row.verification_status);
+}
 
 /** Derived from the real latest job and saved research; never simulated. */
 export function researchState(row: RealCompetitor): ResearchState {
@@ -24,7 +44,7 @@ export function researchState(row: RealCompetitor): ResearchState {
     job?.status === "failed" &&
     (!row.last_researched_at || (job.created_at && job.created_at > row.last_researched_at));
   if (failedAfterResearch) return "failed";
-  if (row.last_researched_at) return "researched";
+  if (hasCurrentResearch(row)) return "researched";
   return "not_researched";
 }
 
@@ -32,8 +52,7 @@ export function useCompetitorData(companyId: string | null) {
   const [rows, setRows] = useState<RealCompetitor[]>([]),
     [research, setResearch] = useState<Research[]>([]),
     [jobs, setJobs] = useState<AIJob[]>([]),
-    [searchAvailable, setSearchAvailable] = useState(false),
-    [searchProvider, setSearchProvider] = useState("gemini"),
+    [capabilities, setCapabilities] = useState<z.infer<typeof capabilitiesSchema> | null>(null),
     [loaded, setLoaded] = useState(false),
     [error, setError] = useState(""),
     [tick, setTick] = useState(0);
@@ -41,35 +60,31 @@ export function useCompetitorData(companyId: string | null) {
 
   useEffect(() => {
     if (!companyId) return;
-    let live = true;
+    const controller = new AbortController();
+    function read<T>(path: string, schema: z.ZodType<T>) {
+      return companyRequest(companyId!, path, schema, undefined, undefined, controller.signal);
+    }
     Promise.all([
-      companyRequest(companyId, `/competitors?include_removed=true&limit=${PAGE_LIMIT}`, z.array(competitorSchema)),
-      companyRequest(companyId, `/competitor-insights?limit=${PAGE_LIMIT}`, z.array(researchSchema)),
-      companyRequest(companyId, `/ai-jobs?kind=competitor_research&limit=${PAGE_LIMIT}`, z.array(aiJobSchema)),
-      companyRequest(
-        companyId,
-        "/ai-capabilities",
-        z.object({ search_available: z.boolean(), search_provider: z.string().default("gemini") }).passthrough(),
-      ),
+      collectPages((offset) => read(`/competitors?include_removed=true&limit=${PAGE_LIMIT}&offset=${offset}`, z.array(competitorSchema))),
+      collectPages((offset) => read(`/competitor-insights?limit=${PAGE_LIMIT}&offset=${offset}`, z.array(researchSchema))),
+      collectPages((offset) => read(`/ai-jobs?kind=competitor_research&limit=${PAGE_LIMIT}&offset=${offset}`, z.array(aiJobSchema))),
+      read("/ai-capabilities", capabilitiesSchema),
     ])
       .then(([competitors, found, history, capabilities]) => {
-        if (!live) return;
+        if (controller.signal.aborted) return;
         setRows(competitors);
         setResearch(found);
         setJobs(history);
-        setSearchAvailable(capabilities.search_available);
-        setSearchProvider(capabilities.search_provider);
+        setCapabilities(capabilities);
         setError("");
         setLoaded(true);
       })
       .catch((e) => {
-        if (!live) return;
+        if (controller.signal.aborted) return;
         setError(e instanceof Error ? e.message : "Competitors could not be loaded");
         setLoaded(true);
       });
-    return () => {
-      live = false;
-    };
+    return () => controller.abort();
   }, [companyId, tick]);
 
   const activeJobs = useMemo(() => jobs.filter((j) => ACTIVE_JOB.includes(j.status)), [jobs]);
@@ -95,11 +110,10 @@ export function useCompetitorData(companyId: string | null) {
     activeJobs,
     latest,
     history,
-    searchAvailable,
-    searchProvider,
+    searchAvailable: !!capabilities?.search_available,
+    capabilities,
     loaded,
     error,
     reload,
-    truncated: rows.length >= PAGE_LIMIT,
   };
 }

@@ -20,6 +20,7 @@ export const companySchema = z.object({
   state: nullable.optional(),
   public_email: nullable.optional(),
   public_phone: nullable.optional(),
+  office_address: nullable.optional(),
   description: nullable,
   city: nullable,
   country: nullable,
@@ -201,6 +202,32 @@ export const finishOnboarding = (id: string, revision: number) =>
   request(`/companies/${id}/onboarding/complete`, progressSchema, "POST", {
     revision,
   });
+export const firstPostSchema = z.object({
+  job_id: z.uuid().nullable(),
+  error: z.string().nullable(),
+  retryable: z.boolean(),
+  pending: z.boolean(),
+});
+export type OnboardingGoals = {
+  goal: "brand_awareness" | "lead_generation" | "audience_engagement";
+  platforms: string[];
+  voice: "professional" | "friendly" | "bold" | "playful";
+};
+export async function prepareWebsiteBrand(id: string, jobId: string) {
+  await request(`/companies/${id}/onboarding/website-brand`, z.null(), "POST", { job_id: jobId });
+}
+export const validateOnboardingWebsite = (url: string) =>
+  request("/onboarding/validate-website", z.object({ url: z.string() }), "POST", { url });
+export const finalizeOnboarding = (id: string, revision: number, preferencesRevision: number, goals: OnboardingGoals) =>
+  request(`/companies/${id}/onboarding/finalize`, firstPostSchema, "POST", {
+    revision,
+    preferences_revision: preferencesRevision,
+    ...goals,
+  });
+export const getFirstPost = (id: string) =>
+  request(`/companies/${id}/onboarding/first-post`, firstPostSchema);
+export const retryFirstPost = (id: string, jobId: string | null, textOnly = false) =>
+  request(`/companies/${id}/onboarding/first-post`, firstPostSchema, "POST", { job_id: jobId, text_only: textOnly });
 export async function getCompanyBundle(id: string): Promise<CompanyBundle> {
   const [company, brand, preferences, progress] = await Promise.all([
     request(`/companies/${id}`, companySchema),

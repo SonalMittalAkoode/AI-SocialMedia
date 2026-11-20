@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { API_URL } from "@/lib/auth-api";
+export function websiteHost(url?: string | null) {
+  try { return new URL(url || "").hostname.replace(/^www\./, ""); }
+  catch { return ""; }
+}
 export const evidenceSchema = z.object({
   field: z.string(),
   value: z.string(),
@@ -37,6 +41,7 @@ export const analysisSchema = z.object({
   state: z.string().nullable().optional(),
   public_email: z.string().nullable().optional(),
   public_phone: z.string().nullable().optional(),
+  office_address: z.string().nullable().optional(),
   value_proposition: z.string().nullable(),
   content_pillars: z.array(z.string()),
   suggested_content_tone: z.array(z.string()),
@@ -137,6 +142,17 @@ export const startExtraction = (
   url: string,
   reanalyze = false,
 ) => request(company, "", jobSchema, { url, reanalyze });
+export async function importWebsiteBrandMedia(company: string, job: string, revision: number, draftOnly = false) {
+  const response = await fetch(`${API_URL}/companies/${company}/brand/logo/auto?job_id=${job}&revision=${revision}${draftOnly ? "&draft_only=true" : ""}`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Brand assets could not be imported.");
+  return z.object({ brand_revision: z.number() }).parse(data);
+}
 export const applyExtraction = (
   company: string,
   id: string,

@@ -2,18 +2,19 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { AIJob, listAIJobs, getAIJob } from "@/lib/intelligence-api";
-export function useAIJob(companyId: string | null, kind: string) {
+export function useAIJob(companyId: string | null, kind: string, requestedId?: string, enabled = true) {
   const [job, setJob] = useState<AIJob | null>(null),
     [error, setError] = useState(""),
     [refresh, setRefresh] = useState(0);
   useEffect(() => {
-    if (!companyId) return;
+    if (!companyId || !enabled) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function poll(current?: AIJob) {
       try {
-        const next =
-          current || (await listAIJobs(companyId!, kind, controller.signal))[0];
+        const next = current || (requestedId
+          ? await getAIJob(companyId!, requestedId, controller.signal)
+          : (await listAIJobs(companyId!, kind, controller.signal))[0]);
         if (controller.signal.aborted) return;
         setJob(next || null);
         setError("");
@@ -39,7 +40,7 @@ export function useAIJob(companyId: string | null, kind: string) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [companyId, kind, refresh]);
+  }, [companyId, kind, requestedId, enabled, refresh]);
   return {
     job,
     error,

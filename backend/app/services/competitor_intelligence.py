@@ -128,6 +128,9 @@ async def fetch_competitor_site(url,extractor=extract_website):
 
 
 def _merge_usage(base, extra):
+    if (base or {}).get("provider") == "openai" or (extra or {}).get("provider") == "openai":
+        from app.services.openai_provider import merge_usage
+        return merge_usage(base, extra)
     names={"prompt_tokens":"prompt_token_count","output_tokens":"candidates_token_count","total_tokens":"total_token_count"}
     merged={k:(base.get(k) or 0)+(extra.get(v) or 0) for k,v in names.items()}
     merged["thinking_tokens"]=base.get("thinking_tokens")

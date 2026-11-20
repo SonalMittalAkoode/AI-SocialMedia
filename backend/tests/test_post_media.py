@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 import pytest
 from PIL import Image
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.exc import DBAPIError
 from google.genai import errors
 from app.core.intelligence_config import ai_settings
@@ -80,7 +80,20 @@ def test_text_with_images_queues_one_image_per_result_and_links_on_save(client, 
     assert "Abstract gears in brand colors" in image_jobs[1].payload["prompt"]
     monkeypatch.setattr(GoogleImageProvider, "generate", AsyncMock(return_value=(png(), "image/png")))
     run_next(db, c["id"]); run_next(db, c["id"])
-    media = client.get(root + f"/content-generations/{job['id']}/media").json()
+    reads = []
+
+    def record_media_reads(execute_state):
+        if execute_state.is_select:
+            entity = execute_state.statement.column_descriptions[0].get("entity")
+            if entity in (AIJob, PostAsset):
+                reads.append(entity)
+
+    event.listen(db, "do_orm_execute", record_media_reads)
+    try:
+        media = client.get(root + f"/content-generations/{job['id']}/media").json()
+    finally:
+        event.remove(db, "do_orm_execute", record_media_reads)
+    assert reads[-2:] == [AIJob, PostAsset]
     assert len(media["assets"]) == 2 and all(a["post_id"] is None for a in media["assets"])
     assert {j["status"] for j in media["jobs"]} == {"completed"}
     saved = client.post(root + "/posts", json={**result["posts"][0], "creation_key": str(uuid4()), "generation_job_id": job["id"], "result_index": 0}).json()
@@ -274,9 +287,14 @@ def test_image_brief_is_brand_specific_and_bounded():
                "brand_voice": ["Warm"], "brand_colors": ["#0b0b0b", "#ff2dab"], "preferences": {"excluded_topics": ["Politics"]},
                "competitor_insights": [{"themes": ["Latte art"]}]}
     brief = post_media.image_brief(context, {"platform": "Instagram", "content_type": "image", "title": "Morning ritual", "image_prompt": "Steam over a cup"}, "4:5", "x" * 900)
-    for expected in ("Coffee", "Single-origin beans", "Home brewers", "#0b0b0b, #ff2dab", "4:5", "Steam over a cup", "Politics", "Latte art", "No logos"):
+    for expected in ("Coffee", "Single-origin beans", "Home brewers", "near-black (#0b0b0b), vivid magenta (#ff2dab)", "4:5", "Steam over a cup", "Politics", "Latte art", "No logos",
+                     "1. Core subject", "9. Restrictions", "near-black", "vivid magenta", "No rendered text"):
         assert expected in brief
     assert len(brief) <= 4000 and "x" * 501 not in brief
+    for palette in ([], ["unknown"]):
+        no_palette = post_media.image_brief({**context, "brand_colors": palette}, {"platform": "Instagram", "title": "Coffee beans"}, "4:5")
+        assert "Choose an original, cohesive palette" in no_palette
+        assert "Coffee beans" in no_palette
 
 
 def test_provider_errors_and_ratio_validation(monkeypatch):

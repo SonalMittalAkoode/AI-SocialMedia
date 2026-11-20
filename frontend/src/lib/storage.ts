@@ -23,12 +23,15 @@ const stateSchema = z.object({
       name: z.string(),
       website: z.string(),
       industry: z.string(),
+      brandSource: z.string().optional(),
+      tagline: z.string().optional(),
       businessType: z.string().optional(),
       state: z.string().optional(),
       city: z.string().optional(),
       country: z.string().optional(),
       publicEmail: z.string().optional(),
       publicPhone: z.string().optional(),
+      officeAddress: z.string().optional(),
       keywords: z.string().optional(),
       description: z.string(),
       location: z.string(),
@@ -111,15 +114,9 @@ export function parseState(raw: string | null): DemoState {
 export function serializeState(state: DemoState) {
   return JSON.stringify({ version: 1, data: state });
 }
-export const steps = [
-  "business",
-  "brand",
-  "competitors",
-  "preferences",
-  "generate",
-];
+export const steps = ["business", "brand", "goals"];
 export function onboardingPath(state: DemoState) {
   return state.onboarding.completed
     ? "/dashboard"
-    : `/onboarding/${steps[Math.min(4, Math.max(0, state.onboarding.currentStep ?? state.onboarding.step))]}`;
+    : `/onboarding/${steps[Math.min(2, Math.max(0, state.onboarding.currentStep ?? state.onboarding.step))]}`;
 }

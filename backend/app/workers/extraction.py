@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.extraction_config import extraction_settings as limits
 from app.services import extraction_jobs as jobs
 from app.services.website_extraction import extract_website
-from app.services.gemini_brand_analyzer import GeminiBrandAnalyzer
+from app.services import ai_provider
 from app.services.extraction_errors import ExtractionError
 from app.services import ai_queue
 from app.workers.intelligence import run_job as run_intelligence_job
@@ -38,7 +38,7 @@ async def run_job(claimed, analyzer, session_factory=SessionLocal, extractor=ext
             result, usage = await analyzer.analyze(website, compact=compact, lenient=True)
             stage("saving")
             with session_factory() as db:
-                jobs.succeed(db, job_id, token, result, website, usage, settings.GEMINI_MODEL, elapsed_ms + int((time.monotonic() - started) * 1000))
+                jobs.succeed(db, job_id, token, result, website, usage, getattr(analyzer, "model", None) or settings.GEMINI_MODEL, elapsed_ms + int((time.monotonic() - started) * 1000))
             logger.info("job=%s status=completed pages=%s duration_ms=%s", job_id, len(website["pages"]), int((time.monotonic() - started) * 1000))
     except Exception as exc:
         error = exc if isinstance(exc, ExtractionError) else ExtractionError("job_timeout" if isinstance(exc, TimeoutError) else "worker_failure", "The analysis could not finish. Retry or enter details manually.", isinstance(exc, TimeoutError))
@@ -49,7 +49,9 @@ async def run_job(claimed, analyzer, session_factory=SessionLocal, extractor=ext
 
 
 async def main():
-    analyzer = GeminiBrandAnalyzer()
+    analyzer = ai_provider.create_analyzer()
+    # Model names only; credentials are never logged.
+    logger.info("AI provider=%s text_model=%s research_model=%s image_model=%s", ai_provider.name(), ai_provider.text_model(), ai_provider.research_model(), ai_provider.image_model())
     scheduler = asyncio.create_task(run_scheduler())
     try:
         while True:
@@ -75,7 +77,7 @@ async def main():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    for name in ("httpx", "httpx2", "google_genai"):
+    for name in ("httpx", "httpx2", "google_genai", "openai"):
         logging.getLogger(name).setLevel(logging.WARNING)
     try:
         asyncio.run(main())

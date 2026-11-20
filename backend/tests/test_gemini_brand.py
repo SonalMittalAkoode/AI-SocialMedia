@@ -47,6 +47,37 @@ def test_correction_and_empty_response():
     assert generate.call_count==2
 
 
+def test_contact_footer_fills_email_address_and_verified_region():
+    from app.services.gemini_brand_analyzer import analysis_sources
+    from app.services.html_extractor import parse_html
+
+    url = "https://business.org/contact"
+    address = "Steen Blichers Vej 21, 2000 Frederiksberg, Denmark"
+    page, _, _ = parse_html(url, f"""
+        <main><p>Example Engineering is Copenhagen-based.</p></main>
+        <footer><span hidden>hidden@business.org</span>
+        <a href="/support"><u>info@business.org</u></a>
+        <div>Office: {address}<br>Registration number 123</div></footer>
+    """)
+    website = {"pages": [page], "social_links": {}}
+    source_id = next(key for key, source in analysis_sources(website).items()
+                     if source["text"] == "Example Engineering is Copenhagen-based.")
+    wire = {"company_name": "Example Engineering", "city": "Copenhagen", "field_evidence": [
+        {"field": field, "value": value, "source_id": source_id, "classification": "explicit", "confidence": "high"}
+        for field, value in [("company_name", "Example Engineering"), ("city", "Copenhagen")]
+    ]}
+    generate = AsyncMock(return_value=SimpleNamespace(text=json.dumps(wire), usage_metadata=None))
+    client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate)))
+    result, _ = asyncio.run(GeminiBrandAnalyzer(client).analyze(website))
+    assert result.public_email == "info@business.org"
+    assert result.office_address == address
+    assert result.city == "Frederiksberg"
+    assert result.country == "Denmark"
+    assert result.state == "Capital Region of Denmark"
+    region = next(item for item in result.field_evidence if item.field == "state")
+    assert (region.classification, region.supporting_text, region.source_url) == ("inferred", address, url)
+
+
 def test_wire_schema_simplifies_decoding_without_weakening_local_validation():
     assert "maxLength" not in json.dumps(generation_schema())
     assert "maxItems" in json.dumps(BrandAnalysis.model_json_schema())

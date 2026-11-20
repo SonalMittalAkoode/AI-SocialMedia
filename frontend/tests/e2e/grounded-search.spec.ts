@@ -129,7 +129,7 @@ test("quota failure keeps independently sourced manual competitors available", a
   expect(rows[0].source_provider).toBe("manual");
 });
 
-test("onboarding offers the same explicit live search and company switching clears it", async ({
+test("explicit CRM discovery stays scoped to the selected company", async ({
   page,
 }) => {
   const { workspaceId } = await signInWorkspace(page);
@@ -145,14 +145,6 @@ test("onboarding offers the same explicit live search and company switching clea
   await page.route("**/competitor-search", (route) =>
     route.fulfill({ json: answer }),
   );
-  await page.goto("/onboarding/competitors");
-  await page
-    .getByRole("button", { name: "Discover competitors", exact: true })
-    .click();
-  await expect(
-    page.getByRole("article", { name: "Google grounded search results" }),
-  ).toBeVisible();
-  // Exercise the same panel in the CRM, then switch its company in-place.
   await page.goto("/dashboard/competitors");
   await page
     .getByRole("button", { name: "Discover competitors", exact: true })
@@ -170,4 +162,36 @@ test("onboarding offers the same explicit live search and company switching clea
   await expect(
     page.getByRole("heading", { name: "Grounded Candidate" }),
   ).toHaveCount(0);
+});
+
+test("OpenAI web search shows clickable citations without Google suggestions, saving or importing", async ({
+  page,
+}) => {
+  const { companyId } = await signInWorkspace(page);
+  const openaiText = "Harbour Roasters sells single-origin coffee in Leeds. Its identity has not been verified.";
+  await page.route("**/competitor-search", (route) =>
+    route.fulfill({
+      json: {
+        provider: "openai",
+        display_only: true,
+        text: openaiText,
+        sources: [{ uri: "https://www.harbourroasters.co.uk/", title: "Harbour Roasters" }],
+        citations: [{ start: 0, end: 52, source_indices: [0] }],
+        search_suggestions_html: "",
+      },
+    }),
+  );
+  await page.goto("/dashboard/competitors");
+  await page.getByRole("button", { name: "Discover competitors", exact: true }).click();
+  const result = page.getByRole("article", { name: "OpenAI web search results" });
+  await expect(result).toContainText("Searched with OpenAI web search");
+  await expect(result).toContainText("Harbour Roasters sells single-origin coffee in Leeds");
+  await expect(result.getByRole("link", { name: "Source 1: Harbour Roasters" })).toHaveAttribute(
+    "href",
+    "https://www.harbourroasters.co.uk/",
+  );
+  await expect(page.locator('iframe[title="Google Search Suggestions"]')).toHaveCount(0);
+  await expect(result.getByRole("button", { name: /import|approve|research|save/i })).toHaveCount(0);
+  expect(await (await page.request.get(`${apiURL}/companies/${companyId}/competitors`)).json()).toEqual([]);
+  await page.screenshot({ path: "artifacts/openai-competitor-search-desktop.png", fullPage: true });
 });

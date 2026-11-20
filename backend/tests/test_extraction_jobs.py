@@ -38,7 +38,7 @@ def completed(db,client,root):
     record=db.get(Job,job["id"])
     record.status,record.stage="completed","completed"
     record.completed_at=jobs.now()
-    db.add(Result(job_id=record.id,company_id=record.company_id,extracted_data=BrandAnalysis(company_name="Suggested name",description="A reviewed description of a real business.",value_proposition="Useful products").model_dump(),source_evidence=[],source_pages=[],warnings=[],model_identifier="test-model"))
+    db.add(Result(job_id=record.id,company_id=record.company_id,extracted_data=BrandAnalysis(company_name="Suggested name",description="A reviewed description of a real business.",value_proposition="Useful products",office_address="20 Example Street").model_dump(),source_evidence=[],source_pages=[],warnings=[],model_identifier="test-model"))
     db.commit()
     return job
 
@@ -100,9 +100,10 @@ def test_apply_only_selected_fields_conflict_and_confirmation(client,db,setup):
     before=client.get(brand_url).json()
     assert before["is_confirmed"] is True and before["display_name"]=="My Cafe"
     url=root+f"/{job['id']}/apply"
-    body={"company_revision":1,"brand_revision":before["revision"],"fields":{"company_name":"Approved edited name","value_proposition":"Edited recommendation"}}
+    body={"company_revision":1,"brand_revision":before["revision"],"fields":{"company_name":"Approved edited name","value_proposition":"Edited recommendation","office_address":"21 Example Street"}}
     assert client.post(url,json={**body,"brand_revision":1}).status_code==409
     assert client.post(url,json=body).status_code==200
+    assert client.get(f"/api/v1/companies/{c['id']}").json()["office_address"] == "21 Example Street"
     after=client.get(brand_url).json()
     assert after["display_name"]=="Approved edited name" and after["description"]==before["description"]
     assert after["is_confirmed"] is False and after["source"]=="ai"

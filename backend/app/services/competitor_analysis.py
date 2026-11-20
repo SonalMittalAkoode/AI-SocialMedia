@@ -12,6 +12,7 @@ from typing import Literal
 from google.genai import types, errors
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.core.config import settings
+from app.core.intelligence_config import ai_settings
 from app.services.extraction_errors import ExtractionError
 
 SYSTEM = """You are a social media strategist comparing a confirmed brand with ONE competitor.
@@ -99,6 +100,8 @@ async def assess(client, context: dict, analysis: dict):
         raise ExtractionError("insufficient_evidence", "No validated competitor facts were available to assess.")
     prompt = json.dumps({"brand": brand_summary(context), "competitor_facts": facts}, ensure_ascii=False)
     usage = {}
+    if getattr(client, "provider", None) == "openai":
+        return await _assess_openai(client, prompt, facts)
     for attempt in range(2):
         try:
             response = await asyncio.wait_for(client.aio.models.generate_content(
@@ -123,6 +126,27 @@ async def assess(client, context: dict, analysis: dict):
             raise ExtractionError("gemini_unavailable", "Gemini could not complete the assessment; website findings were kept.", bool(exc.code and exc.code >= 500)) from None
         except (asyncio.TimeoutError, TimeoutError):
             raise ExtractionError("gemini_timeout", "The competitive assessment timed out; website findings were kept.") from None
+
+
+
+async def _assess_openai(client, prompt, facts):
+    """Same contract and validation as the Gemini path; provider errors are already mapped."""
+    from app.services.openai_provider import merge_usage
+    usage = {}
+    for attempt in range(2):
+        try:
+            text, used, _ = await client.structured(
+                model=settings.OPENAI_RESEARCH_MODEL, system=SYSTEM, name="competitive_assessment",
+                content=prompt + ("\nPrevious output failed validation: copy each basis exactly from competitor_facts." if attempt else ""),
+                schema=CompetitiveAssessment.model_json_schema(), max_output_tokens=ai_settings.openai_text_max_output_tokens,
+                reasoning=ai_settings.openai_research_reasoning, purpose="research", timeout=ai_settings.openai_text_timeout)
+            usage = merge_usage(usage, used)
+            return validate(CompetitiveAssessment.model_validate_json(text), facts), usage
+        except (ValidationError, ValueError):
+            if attempt:
+                raise ExtractionError("assessment_invalid", "The competitive assessment could not be validated; website findings were kept.") from None
+        except ExtractionError as exc:
+            raise ExtractionError(exc.code, exc.message.rstrip(".") + "; website findings were kept.", exc.transient) from None
 
 
 Classification = Literal["retrieved_offering", "interpretation", "strategic_suggestion"]

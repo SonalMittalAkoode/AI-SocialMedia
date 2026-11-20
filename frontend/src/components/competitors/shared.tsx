@@ -14,10 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { RealCompetitor, Research, researchView } from "@/lib/intelligence-api";
-import type { ResearchState } from "./use-competitor-data";
-
-export const MAX_APPROVED = 5;
-export const MAX_BULK = 10;
+import { hasCurrentResearch, type ResearchState } from "./use-competitor-data";
 
 export const domainOf = (url: string) => {
   try {
@@ -49,7 +46,7 @@ export function ago(value?: string | null) {
 
 /** Everything a card/table/drawer shows, from saved records only. */
 export function competitorView(row: RealCompetitor, research?: Research) {
-  const view = research ? researchView(research) : null;
+  const view = research && hasCurrentResearch(row) ? researchView(research) : null;
   const location = [row.city, row.country].filter(Boolean).join(", ") || view?.business.location || null;
   return {
     industry: row.industry || view?.business.industry || null,
@@ -132,7 +129,7 @@ export function Chip({ children, title }: { children: ReactNode; title?: string 
 export function Provenance({ kind }: { kind: "verified" | "interpretation" | "suggestion" }) {
   const meta = {
     verified: ["Verified from website", "Matched to text retrieved from the competitor's public website."],
-    interpretation: ["AI interpretation", "Gemini's interpretation of verified facts. Review before relying on it."],
+    interpretation: ["AI interpretation", "The AI model's interpretation of verified facts. Review before relying on it."],
     suggestion: ["Strategic suggestion", "An idea for your brand, not a fact about the competitor."],
   }[kind];
   return (

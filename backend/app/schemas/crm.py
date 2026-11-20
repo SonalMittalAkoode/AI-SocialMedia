@@ -78,6 +78,17 @@ class CompetitorStats(Schema):
     informing_generation: int = 0
 
 
+class SocialAccountStats(Schema):
+    """Stored connection state only (no provider call); never implies publishing."""
+    total: int = 0
+    connected: int = 0
+    limited: int = 0
+    reconnect_required: int = 0
+    error: int = 0
+    connected_platforms: list[str] = []
+    publishing_permission: int = 0
+
+
 class DashboardSummary(Schema):
     company_id: UUID
     company_timezone: str
@@ -92,10 +103,13 @@ class DashboardSummary(Schema):
     recent_posts: list[PostResponse]
     awaiting_approval: list[PostResponse]
     upcoming_schedules: list[CalendarEvent]
+    upcoming_scheduled_posts: int = 0
+    upcoming_active_schedules: list[CalendarEvent] = []
     recent_activity: list[Activity]
     recent_generations: list[Generation]
     content_stats: ContentStats = ContentStats()
     competitor_stats: CompetitorStats = CompetitorStats()
+    social_account_stats: SocialAccountStats = SocialAccountStats()
     publishing_available: bool = False
     analytics_available: bool = False
 

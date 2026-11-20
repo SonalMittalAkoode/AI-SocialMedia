@@ -9,6 +9,15 @@ from app.db.database import engine, get_db
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def legacy_ai_provider(monkeypatch, request):
+    """Existing suites use Gemini-shaped fakes, so they pin AI_PROVIDER=gemini. OpenAI suites
+    (marked ``openai_provider``) select OpenAI themselves. The application default is openai."""
+    if request.node.get_closest_marker("openai_provider") is None:
+        from app.core.config import settings
+        monkeypatch.setattr(settings, "AI_PROVIDER", "gemini")
+
+
 @pytest.fixture
 def db():
     connection = engine.connect()

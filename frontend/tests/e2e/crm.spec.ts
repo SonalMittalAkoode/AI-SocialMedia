@@ -129,14 +129,12 @@ test("CRM metrics and library support real search, pagination, revisions and sch
   expect(schedule.status()).toBe(201);
   await page.goto("/dashboard");
   for (const name of [
-    "Total saved posts: 26",
-    "Draft posts: 23",
-    "Approved posts: 1",
-    "Needs review: 1",
-    "Scheduled posts: 1",
-    "Archived posts: 1",
+    "Total Posts: 26",
+    "Scheduled: 1",
+    "AI Creations: 0",
   ])
     await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Needs Attention: 24" })).toBeVisible();
   await expect(
     page.getByText("Creative momentum", { exact: true }),
   ).toHaveCount(0);

@@ -5,7 +5,7 @@ from app.db.database import SessionLocal
 from app.core.intelligence_config import ai_settings as limits, timeout_for
 from app.core.config import settings
 from app.models.intelligence import Competitor,CompetitorResearch
-from app.services import ai_queue,competitor_intelligence as competitors
+from app.services import ai_queue,ai_provider,competitor_intelligence as competitors
 from app.services.extraction_jobs import now
 from app.services.extraction_errors import ExtractionError
 
@@ -16,15 +16,19 @@ async def run_job(claimed,analyzer,session_factory=SessionLocal,search_provider=
         job=ai_queue.leased(db,job_id,token)
         if not job:return
         kind,payload,company_id,remaining=job.kind,job.payload,job.company_id,max(0.1,timeout_for(job.kind)-job.duration_ms/1000)
+        if kind == "trend_search":
+            ai_queue.fail(db, job_id, token, ExtractionError("search_display_only", "Trend searches require an explicit live request."))
+            return
         job.stage={'competitor_discovery':'searching','competitor_research':'researching','content_generation':'generating','image_generation':'generating_image'}[kind]
-        if kind in ('competitor_research','content_generation'):job.model_identifier=settings.GEMINI_MODEL
-        elif kind=='image_generation':job.model_identifier=limits.gemini_image_model
+        if kind=='competitor_research':job.model_identifier=getattr(analyzer,'model',None) or ai_provider.research_model()
+        elif kind=='content_generation':job.model_identifier=ai_provider.text_model()
+        elif kind=='image_generation':job.model_identifier=ai_provider.image_model()
         db.commit()
     try:
         async with asyncio.timeout(remaining):
             if kind=="competitor_discovery":
                 if payload.get("mode") == "display_only":
-                    raise ExtractionError("search_display_only", "Live Gemini searches are never replayed by the background worker.")
+                    raise ExtractionError("search_display_only", "Live display-only searches are never replayed by the background worker.")
                 rows=await competitors.discover(payload["context"],search_provider)
                 result={"query_count":len(__import__('app.services.search_provider',fromlist=['queries_for']).queries_for(payload["context"])),"candidate_count":len(rows),"verified_count":0,"warnings":["Search candidates are unverified until public website research succeeds."]}
                 with session_factory() as db:
@@ -38,6 +42,7 @@ async def run_job(claimed,analyzer,session_factory=SessionLocal,search_provider=
                 kwargs={"extractor":extractor} if extractor else {}
                 def stage(value):
                     with session_factory() as db:ai_queue.stage(db,job_id,token,value)
+                research_model=getattr(analyzer,'model',None) or settings.GEMINI_MODEL
                 result,usage=await competitors.research(payload["competitor"],payload["context"],analyzer,stage=stage,**kwargs)
                 with session_factory() as db:
                     job=ai_queue.leased(db,job_id,token)
@@ -47,8 +52,8 @@ async def run_job(claimed,analyzer,session_factory=SessionLocal,search_provider=
                     if competitors.domain(payload["competitor"]["website_url"])!=record.normalized_domain:raise ExtractionError("competitor_changed","The competitor website changed during research. Research it again.")
                     record.verification_status=result["verification_status"];record.relevance_score=result["relevance_score"];record.relevance_reason=result["relevance_reason"]
                     # Preserve manually edited identity/description and approval status.
-                    db.add(CompetitorResearch(company_id=company_id,competitor_id=record.id,job_id=job_id,data=result,source_evidence=result["analysis"]["field_evidence"],model_identifier=settings.GEMINI_MODEL))
-                    job.model_identifier=settings.GEMINI_MODEL;job.token_usage=usage
+                    db.add(CompetitorResearch(company_id=company_id,competitor_id=record.id,job_id=job_id,data=result,source_evidence=result["analysis"]["field_evidence"],model_identifier=research_model))
+                    job.model_identifier=research_model;job.token_usage=usage
                     complete(job,{"competitor_id":str(record.id),"verification_status":record.verification_status});db.commit()
             else:
                 from app.services.content_handlers import handle_content_job

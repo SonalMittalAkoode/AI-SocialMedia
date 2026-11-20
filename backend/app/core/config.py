@@ -1,4 +1,6 @@
 
+from typing import Literal
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -9,8 +11,17 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "socialai"
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str = "socialai_db"
-    GEMINI_API_KEY: str
+    # Active AI provider for every workflow. No automatic fallback between providers.
+    AI_PROVIDER: Literal["openai", "gemini"] = "openai"
+    # Gemini stays available as an explicitly selectable provider (AI_PROVIDER=gemini).
+    GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.8-flash"
+    OPENAI_API_KEY: SecretStr | None = None
+    OPENAI_TEXT_MODEL: str = ""
+    OPENAI_RESEARCH_MODEL: str = ""
+    OPENAI_IMAGE_MODEL: str = ""
+    OPENAI_PREMIUM_IMAGE_MODEL: str = ""
+    OPENAI_WEB_SEARCH_ENABLED: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

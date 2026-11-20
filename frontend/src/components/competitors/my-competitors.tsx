@@ -1,6 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
-import { ExternalLink, Filter, LayoutGrid, List, MapPin, Plus, RefreshCw, Search, SearchX, Users } from "lucide-react";
+import { useId, useMemo, useState } from "react";
+import { ExternalLink, Filter, Info, LayoutGrid, List, MapPin, Plus, RefreshCw, Search, SearchX, Users } from "lucide-react";
 import { Button } from "@/components/ui";
 import { isResearching, RealCompetitor, Research } from "@/lib/intelligence-api";
 import {
@@ -11,18 +11,20 @@ import {
   competitorView,
   domainOf,
   EmptyState,
-  MAX_APPROVED,
-  MAX_BULK,
   MenuAction,
   ResearchStatus,
   stageLabel,
   VerificationStatus,
+  when,
 } from "./shared";
-import { ResearchState, researchState } from "./use-competitor-data";
+import { hasCurrentResearch, ResearchState, researchState } from "./use-competitor-data";
 
 export type CompetitorActions = {
+  canManage: boolean;
+  maxApproved: number;
+  maxBulk: number;
   view: (row: RealCompetitor) => void;
-  research: (ids: string[], force?: boolean) => void;
+  research: (ids: string[], force?: boolean) => Promise<boolean>;
   select: (row: RealCompetitor, status: "approved" | "rejected" | "suggested") => void;
   edit: (row: RealCompetitor) => void;
   remove: (row: RealCompetitor) => void;
@@ -30,37 +32,38 @@ export type CompetitorActions = {
   add: () => void;
 };
 
-export type Filters = { q: string; industry: string; research: string; verification: string; approval: string; sort: string };
-export const EMPTY_FILTERS: Filters = { q: "", industry: "", research: "", verification: "", approval: "", sort: "relevance" };
+export type Filters = { q: string; industry: string; research: string; verification: string; approval: string; records: string; relevance: string; sort: string };
+export const EMPTY_FILTERS: Filters = { q: "", industry: "", research: "", verification: "", approval: "", records: "active", relevance: "", sort: "relevance" };
+const PAGE_SIZE = 12;
+const relevanceRanges = { "0-39": [0, 39], "40-69": [40, 69], "70-100": [70, 100] } as const;
 
 export function menuActions(row: RealCompetitor, a: CompetitorActions, approvedCount: number, busy: boolean): MenuAction[] {
-  if (row.removed_at)
-    return [
-      { label: "Visit website", href: row.website_url },
-      { label: "Restore competitor", onSelect: () => a.restore(row), disabled: busy },
-    ];
-  const state = researchState(row);
   const items: MenuAction[] = [
-    { label: "Edit competitor", onSelect: () => a.edit(row), disabled: busy },
+    { label: "View details", onSelect: () => a.view(row) },
     { label: "Visit website", href: row.website_url },
   ];
+  if (!a.canManage) return items;
+  if (row.removed_at) return [...items, { label: "Restore competitor", onSelect: () => a.restore(row), disabled: busy }];
+  const state = researchState(row);
+  items.push({ label: "Edit competitor", onSelect: () => a.edit(row), disabled: busy });
   if (row.selection_status !== "approved")
     items.push({
       label: "Approve competitor",
       onSelect: () => a.select(row, "approved"),
-      disabled: busy || approvedCount >= MAX_APPROVED,
-      title: approvedCount >= MAX_APPROVED ? `Up to ${MAX_APPROVED} competitors can be approved` : undefined,
+      disabled: busy || approvedCount >= a.maxApproved,
+      title: approvedCount >= a.maxApproved ? `Up to ${a.maxApproved} competitors can be approved` : undefined,
     });
   else items.push({ label: "Move back to review", onSelect: () => a.select(row, "suggested"), disabled: busy });
   if (row.selection_status !== "rejected") items.push({ label: "Reject competitor", onSelect: () => a.select(row, "rejected"), disabled: busy });
-  if (state === "researched" || state === "failed")
-    items.push({ label: "Reanalyze", onSelect: () => a.research([row.id], true), disabled: busy });
+  if (state !== "researching")
+    items.push({ label: state === "not_researched" ? "Research website" : "Reanalyze", onSelect: () => a.research([row.id], state !== "not_researched"), disabled: busy });
   items.push({ label: "Remove competitor", onSelect: () => a.remove(row), danger: true, disabled: busy || state === "researching" });
   return items;
 }
 
 const sorters: Record<string, (a: RealCompetitor, b: RealCompetitor) => number> = {
-  relevance: (a, b) => Number(!!b.last_researched_at) - Number(!!a.last_researched_at) || b.relevance_score - a.relevance_score,
+  relevance: (a, b) => Number(hasCurrentResearch(b)) - Number(hasCurrentResearch(a)) || b.relevance_score - a.relevance_score,
+  lowest: (a, b) => Number(hasCurrentResearch(b)) - Number(hasCurrentResearch(a)) || a.relevance_score - b.relevance_score,
   added: (a, b) => (b.created_at || "").localeCompare(a.created_at || ""),
   researched: (a, b) => (b.last_researched_at || "").localeCompare(a.last_researched_at || ""),
   name: (a, b) => a.name.localeCompare(b.name),
@@ -68,15 +71,17 @@ const sorters: Record<string, (a: RealCompetitor, b: RealCompetitor) => number> 
 
 export function applyFilters(rows: RealCompetitor[], latest: Map<string, Research>, f: Filters) {
   const q = f.q.trim().toLowerCase();
+  const range = relevanceRanges[f.relevance as keyof typeof relevanceRanges];
   return rows
     .filter((row) => {
-      const approval = approvalOf(row);
-      if (f.approval ? approval !== f.approval : approval === "removed") return false;
+      if (f.records !== "all" && Boolean(row.removed_at) !== (f.records === "removed")) return false;
+      if (f.approval && row.selection_status !== f.approval) return false;
+      if (range && (!hasCurrentResearch(row) || row.relevance_score < range[0] || row.relevance_score > range[1])) return false;
       const v = competitorView(row, latest.get(row.id));
       if (f.industry && (v.industry || "") !== f.industry) return false;
       if (f.research && researchState(row) !== f.research) return false;
       if (f.verification && row.verification_status !== f.verification) return false;
-      return !q || [row.name, row.website_url, v.industry, v.description].some((s) => s?.toLowerCase().includes(q));
+      return !q || [row.name, row.website_url, v.industry, v.description, v.location].some((s) => s?.toLowerCase().includes(q));
     })
     .sort(sorters[f.sort] || sorters.relevance);
 }
@@ -101,6 +106,8 @@ function CompetitorCard({
   const v = competitorView(row, research);
   const state = researchState(row);
   const unresearched = state === "not_researched";
+  const scored = hasCurrentResearch(row);
+  const scoreHelp = useId();
   return (
     <article className={`cx-card cx-comp${row.removed_at ? " is-removed" : ""}${checked ? " is-checked" : ""}`} aria-label={row.name}>
       <header className="cx-comp-head">
@@ -109,7 +116,7 @@ function CompetitorCard({
           className="cx-check"
           aria-label={`Select ${row.name}`}
           checked={checked}
-          disabled={!!row.removed_at || isResearching(row)}
+          disabled={!actions.canManage || !!row.removed_at || isResearching(row)}
           onChange={(e) => onCheck(e.target.checked)}
         />
         <Avatar name={row.name} />
@@ -130,17 +137,21 @@ function CompetitorCard({
           </span>
         )}
       </div>
-      <div className="cx-relevance" title={row.relevance_reason}>
+      <div className="cx-relevance">
         <div>
           <span>
-            Relevance score <small>(heuristic)</small>
+            Relevance score <small>(heuristic)</small>{" "}
+            <span className="cx-score-help">
+              <button type="button" aria-label="How relevance is scored" aria-describedby={scoreHelp}><Info size={13} /></button>
+              <span id={scoreHelp} role="tooltip">Relevance is an estimate of fit with your business. {row.relevance_reason}</span>
+            </span>
           </span>
-          <strong>{row.last_researched_at ? `${row.relevance_score}/100` : "—"}</strong>
+          <strong>{scored ? `${row.relevance_score}/100` : "Not researched"}</strong>
         </div>
         <div className="cx-bar" aria-hidden>
-          <i style={{ width: row.last_researched_at ? `${row.relevance_score}%` : 0 }} />
+          <i style={{ width: scored ? `${row.relevance_score}%` : 0 }} />
         </div>
-        {!row.last_researched_at && <small className="cx-muted">Calculated after research</small>}
+        {!scored && <small className="cx-muted">Calculated after research</small>}
       </div>
       {v.themes.length > 0 && (
         <div className="cx-themes" aria-label="Content themes">
@@ -173,7 +184,7 @@ function CompetitorCard({
         </div>
       </dl>
       <footer className="cx-comp-foot">
-        {unresearched && !row.removed_at ? (
+        {actions.canManage && unresearched && !row.removed_at ? (
           <>
             <Button disabled={busy} onClick={() => actions.research([row.id])}>
               <RefreshCw size={14} /> Research website
@@ -187,7 +198,7 @@ function CompetitorCard({
             <Button onClick={() => actions.view(row)} aria-label={`View insights for ${row.name}`}>
               View insights
             </Button>
-            {!row.removed_at && (
+            {actions.canManage && !row.removed_at && (
               <Button variant="secondary" disabled={busy || state === "researching"} onClick={() => actions.research([row.id], true)}>
                 <RefreshCw size={14} className={state === "researching" ? "ci-spin" : undefined} />
                 {state === "researching" ? "Researching…" : "Reanalyze"}
@@ -218,19 +229,22 @@ function CompetitorTable({
   setChecked: (ids: string[]) => void;
 }) {
   return (
-    <div className="cx-table-wrap">
+    <div className="cx-table-wrap" role="region" aria-label="Scrollable competitor table" tabIndex={0}>
       <table className="cx-table">
         <thead>
           <tr>
             <th scope="col" className="cx-col-check">
               <span className="sr-only">Select</span>
             </th>
-            <th scope="col">Competitor</th>
+            <th scope="col">Company</th>
             <th scope="col">Industry</th>
+            <th scope="col">Website</th>
+            <th scope="col">Location</th>
             <th scope="col">Relevance</th>
             <th scope="col">Research</th>
-            <th scope="col">Identity</th>
-            <th scope="col">Review</th>
+            <th scope="col">Verification</th>
+            <th scope="col">Approval</th>
+            <th scope="col">Last researched</th>
             <th scope="col">
               <span className="sr-only">Actions</span>
             </th>
@@ -247,23 +261,20 @@ function CompetitorTable({
                     className="cx-check"
                     aria-label={`Select ${row.name}`}
                     checked={checked.includes(row.id)}
-                    disabled={!!row.removed_at || isResearching(row)}
+                    disabled={!actions.canManage || !!row.removed_at || isResearching(row)}
                     onChange={(e) => setChecked(e.target.checked ? [...checked, row.id] : checked.filter((id) => id !== row.id))}
                   />
                 </td>
                 <td>
                   <div className="cx-table-name">
                     <Avatar name={row.name} size={30} />
-                    <div>
-                      <h3>{row.name}</h3>
-                      <a href={row.website_url} target="_blank" rel="noopener noreferrer">
-                        {domainOf(row.website_url)}
-                      </a>
-                    </div>
+                    <h3>{row.name}</h3>
                   </div>
                 </td>
                 <td>{v.industry || <span className="cx-muted">—</span>}</td>
-                <td title={row.relevance_reason}>{row.last_researched_at ? `${row.relevance_score}/100` : <span className="cx-muted">—</span>}</td>
+                <td><a href={row.website_url} target="_blank" rel="noopener noreferrer">{domainOf(row.website_url)}</a></td>
+                <td>{v.location || "—"}</td>
+                <td title={row.relevance_reason}>{hasCurrentResearch(row) ? `${row.relevance_score}/100` : <span className="cx-muted">Not researched</span>}</td>
                 <td>
                   <ResearchStatus state={researchState(row)} stage={stageLabel(row.research_job?.stage)} />
                 </td>
@@ -273,6 +284,7 @@ function CompetitorTable({
                 <td>
                   <ApprovalStatus value={approvalOf(row)} />
                 </td>
+                <td>{when(row.last_researched_at) || "—"}</td>
                 <td>
                   <div className="cx-row-actions">
                     <Button variant="ghost" onClick={() => actions.view(row)} aria-label={`View insights for ${row.name}`}>
@@ -313,7 +325,6 @@ export function MyCompetitors({
   busy,
   filters,
   setFilters,
-  truncated,
 }: {
   rows: RealCompetitor[];
   latest: Map<string, Research>;
@@ -322,11 +333,11 @@ export function MyCompetitors({
   busy: boolean;
   filters: Filters;
   setFilters: (f: Filters) => void;
-  truncated: boolean;
 }) {
   const [view, setView] = useState<"grid" | "table">("grid"),
     [checked, setChecked] = useState<string[]>([]),
-    [filtersOpen, setFiltersOpen] = useState(false);
+    [filtersOpen, setFiltersOpen] = useState(false),
+    [page, setPage] = useState(1);
   const live = rows.filter((r) => !r.removed_at);
   const approvedCount = live.filter((r) => r.selection_status === "approved").length;
   const visible = useMemo(() => applyFilters(rows, latest, filters), [rows, latest, filters]);
@@ -334,17 +345,25 @@ export function MyCompetitors({
     () => [...new Set(rows.map((r) => competitorView(r, latest.get(r.id)).industry).filter(Boolean) as string[])].sort(),
     [rows, latest],
   );
-  const active = Object.entries(filters).some(([k, v]) => k !== "sort" && v);
+  const active = Object.entries(filters).some(([k, v]) => k !== "sort" && v !== EMPTY_FILTERS[k as keyof Filters]);
   const validChecked = checked.filter((id) => visible.some((r) => r.id === id && !r.removed_at && !isResearching(r)));
-  const set = (patch: Partial<Filters>) => setFilters({ ...filters, ...patch });
-  const selectable = visible.filter((r) => !r.removed_at && !isResearching(r));
+  const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pages);
+  const first = (currentPage - 1) * PAGE_SIZE;
+  const pageRows = visible.slice(first, first + PAGE_SIZE);
+  const set = (patch: Partial<Filters>) => {
+    setPage(1);
+    setFilters({ ...filters, ...patch });
+  };
+  const clear = () => set({ ...EMPTY_FILTERS, sort: filters.sort });
+  const selectable = pageRows.filter((r) => !r.removed_at && !isResearching(r));
 
   if (!loaded) return <SkeletonCards />;
   if (!rows.length)
     return (
       <div className="cx-card">
-        <EmptyState icon={Users} title="Build your competitor watchlist." description="Add independently sourced businesses to research their services, positioning and content opportunities.">
-          <Button onClick={actions.add}>
+        <EmptyState icon={Users} title="Build your competitor watchlist." description="Add independently sourced businesses to understand their positioning and content opportunities.">
+          <Button onClick={actions.add} disabled={!actions.canManage}>
             <Plus size={14} /> Add competitor
           </Button>
         </EmptyState>
@@ -382,14 +401,23 @@ export function MyCompetitors({
             <option value="unverified">Unverified</option>
           </select>
           <select aria-label="Approval status" value={filters.approval} onChange={(e) => set({ approval: e.target.value })}>
-            <option value="">Active (not removed)</option>
+            <option value="">Any approval status</option>
             <option value="approved">Approved</option>
             <option value="suggested">Pending review</option>
             <option value="rejected">Rejected</option>
-            <option value="removed">Removed</option>
+          </select>
+          <select aria-label="Relevance range" value={filters.relevance} onChange={(e) => set({ relevance: e.target.value })}>
+            <option value="">Any relevance</option>
+            {Object.entries(relevanceRanges).map(([key, [min, max]]) => <option key={key} value={key}>{min}–{max}</option>)}
+          </select>
+          <select aria-label="Record status" value={filters.records} onChange={(e) => set({ records: e.target.value })}>
+            <option value="active">Active records</option>
+            <option value="removed">Removed records</option>
+            <option value="all">All records</option>
           </select>
           <select aria-label="Sort competitors" value={filters.sort} onChange={(e) => set({ sort: e.target.value })}>
             <option value="relevance">Highest relevance</option>
+            <option value="lowest">Lowest relevance</option>
             <option value="added">Recently added</option>
             <option value="researched">Recently researched</option>
             <option value="name">Name: A–Z</option>
@@ -397,7 +425,7 @@ export function MyCompetitors({
         </div>
         <div className="cx-toolbar-end">
           {active && (
-            <Button variant="ghost" onClick={() => setFilters({ ...EMPTY_FILTERS, sort: filters.sort })}>
+            <Button variant="ghost" onClick={clear}>
               Clear filters
             </Button>
           )}
@@ -418,35 +446,33 @@ export function MyCompetitors({
             className="cx-check"
             aria-label="Select all visible competitors"
             checked={selectable.length > 0 && selectable.every((r) => validChecked.includes(r.id))}
-            disabled={!selectable.length}
-            onChange={(e) => setChecked(e.target.checked ? selectable.map((r) => r.id) : [])}
+            disabled={!actions.canManage || !selectable.length}
+            onChange={(e) => setChecked(e.target.checked ? [...new Set([...validChecked, ...selectable.map((r) => r.id)])] : validChecked.filter((id) => !selectable.some((r) => r.id === id)))}
           />
-          {validChecked.length ? `${validChecked.length} selected` : `${visible.length} of ${live.length} competitors`}
+          {validChecked.length ? `${validChecked.length} selected` : `${visible.length} matching competitor${visible.length === 1 ? "" : "s"}`}
         </label>
         <Button
           variant="secondary"
-          disabled={busy || !validChecked.length || validChecked.length > MAX_BULK}
-          title={validChecked.length > MAX_BULK ? `Research at most ${MAX_BULK} at once` : undefined}
-          onClick={() => {
-            actions.research(validChecked);
-            setChecked([]);
+          disabled={!actions.canManage || busy || !validChecked.length || validChecked.length > actions.maxBulk}
+          title={validChecked.length > actions.maxBulk ? `Research at most ${actions.maxBulk} at once` : undefined}
+          onClick={async () => {
+            if (await actions.research(validChecked)) setChecked([]);
           }}
         >
           <RefreshCw size={14} /> Research selected ({validChecked.length})
         </Button>
       </div>
-      {truncated && <p className="cx-muted">Showing your first 100 competitors; filters apply to these records.</p>}
       {!visible.length ? (
         <div className="cx-card">
-          <EmptyState icon={SearchX} title="No matching competitors." description="Try a different search or adjust your filters.">
-            <Button variant="secondary" onClick={() => setFilters({ ...EMPTY_FILTERS, sort: filters.sort })}>
+          <EmptyState icon={SearchX} title="No matching competitors." description="Try changing your search or adjusting your filters.">
+            <Button variant="secondary" onClick={clear}>
               Clear filters
             </Button>
           </EmptyState>
         </div>
       ) : view === "grid" ? (
         <div className="cx-grid">
-          {visible.map((row) => (
+          {pageRows.map((row) => (
             <CompetitorCard
               key={row.id}
               row={row}
@@ -460,8 +486,13 @@ export function MyCompetitors({
           ))}
         </div>
       ) : (
-        <CompetitorTable rows={visible} latest={latest} actions={actions} approvedCount={approvedCount} busy={busy} checked={validChecked} setChecked={setChecked} />
+        <CompetitorTable rows={pageRows} latest={latest} actions={actions} approvedCount={approvedCount} busy={busy} checked={validChecked} setChecked={setChecked} />
       )}
+      {pages > 1 && <nav className="cx-pagination" aria-label="Competitor pages">
+        <span role="status">{first + 1}–{first + pageRows.length} of {visible.length} competitors</span>
+        <Button variant="secondary" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</Button>
+        <Button variant="secondary" disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>Next</Button>
+      </nav>}
     </div>
   );
 }

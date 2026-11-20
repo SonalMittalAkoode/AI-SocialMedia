@@ -11,15 +11,30 @@ from app.services.onboarding import transaction
 CACHEABLE = ('competitor_discovery', 'competitor_research')
 
 
-def _check_capacity(db, company, user, new_jobs):
+def _check_capacity(db, company, user, new_jobs, images=0):
     """Hourly/global admission. Caller must hold the admission advisory lock."""
     for column, value, limit in [(AIJob.company_id, company.id, limits.hourly_company_limit), (AIJob.requested_by, user.id, limits.hourly_user_limit)]:
         used = db.scalar(select(func.count()).select_from(AIJob).where(column == value, AIJob.created_at > now() - timedelta(hours=1)))
         if used + new_jobs > limit:
             remaining = max(0, limit - used)
             raise HTTPException(429, f"AI usage limit reached; {remaining} operation(s) remain this hour. Try later or select fewer items.")
+    check_daily_budget(db, company, new_jobs, images)
     if db.scalar(select(func.count()).select_from(AIJob).where(AIJob.status.in_(["queued", "running"]))) + new_jobs > limits.max_queue:
         raise HTTPException(503, "AI queue is full; try later")
+
+
+def check_daily_budget(db, company, new_jobs=1, images=0):
+    """Configurable 24-hour application caps (AI_DAILY_*); counts every admitted AI operation."""
+    since = now() - timedelta(hours=24)
+    used = db.scalar(select(func.count()).select_from(AIJob).where(AIJob.company_id == company.id, AIJob.created_at > since))
+    if used + new_jobs > limits.daily_company_limit:
+        raise HTTPException(429, "Daily AI budget for this company reached; try again tomorrow or raise AI_DAILY_COMPANY_LIMIT.")
+    if images:
+        made = db.scalar(select(func.count()).select_from(AIJob).where(AIJob.company_id == company.id, AIJob.kind == "image_generation", AIJob.created_at > since))
+        if made + images > limits.daily_image_limit:
+            raise HTTPException(429, "Daily image generation limit for this company reached; try again tomorrow.")
+    if db.scalar(select(func.count()).select_from(AIJob).where(AIJob.created_at > since)) + new_jobs > limits.daily_global_limit:
+        raise HTTPException(429, "Daily AI budget for this installation reached; try again tomorrow.")
 
 
 def _reuse(db, company, kind, key, payload, target_key, force):
@@ -44,13 +59,19 @@ def _reuse(db, company, kind, key, payload, target_key, force):
 
 def enqueue(db, company, user, kind, key, payload, target_key="", batch_id=None, force=False, extra_capacity=0):
     """extra_capacity reserves room for follow-up jobs the worker will create (e.g. images)."""
+    with transaction(db):
+        return admit(db, company, user, kind, key, payload, target_key, batch_id, force, extra_capacity)
+
+
+def admit(db, company, user, kind, key, payload, target_key="", batch_id=None, force=False, extra_capacity=0):
+    """Admit a job as part of the caller's transaction."""
     reused = _reuse(db, company, kind, key, payload, target_key, force)
     if reused:
         return reused
     db.execute(text("SELECT pg_advisory_xact_lock(560001)"))
-    _check_capacity(db, company, user, 1 + extra_capacity)
+    _check_capacity(db, company, user, 1 + extra_capacity, images=(kind == "image_generation") + extra_capacity)
     job = AIJob(company_id=company.id, requested_by=user.id, kind=kind, request_key=key, payload=payload, target_key=target_key, batch_id=batch_id)
-    with transaction(db): db.add(job)
+    db.add(job)
     return job
 
 
@@ -82,7 +103,7 @@ def claim(db, company_id=None):
     for job in db.scalars(select(AIJob).where(AIJob.status == "running", AIJob.lease_expires_at < now(), *scope).with_for_update(skip_locked=True)):
         job.duration_ms += int((now() - job.started_at).total_seconds() * 1000)
         job.lease_token = job.lease_expires_at = None
-        if (job.kind == "competitor_discovery" and job.payload.get("mode") == "display_only") or job.attempt_count >= limits.max_attempts or job.duration_ms >= timeout_for(job.kind) * 1000:
+        if job.payload.get("mode") == "display_only" or job.attempt_count >= limits.max_attempts or job.duration_ms >= timeout_for(job.kind) * 1000:
             job.status = job.stage = "failed"; job.error_code = "worker_interrupted"; job.error_message = "The worker was interrupted. Retry this operation."; job.completed_at = now()
         else: job.status = job.stage = "queued"; job.available_at = now() + timedelta(seconds=5)
     db.flush()
@@ -110,9 +131,11 @@ def fail(db, job_id, token, error):
     job = leased(db, job_id, token)
     if not job: return
     job.error_code, job.error_message = error.code, error.message
+    if getattr(error, "usage", None):
+        job.token_usage = error.usage  # tokens reported by the provider before the failure
     job.duration_ms += int((now() - job.started_at).total_seconds() * 1000)
     job.lease_token = job.lease_expires_at = None
     if error.transient and job.attempt_count < limits.max_attempts and job.duration_ms < timeout_for(job.kind) * 1000 - 5000:
-        job.status = job.stage = "queued"; job.available_at = now() + timedelta(seconds=5 * job.attempt_count)
+        job.status = job.stage = "queued"; job.available_at = now() + timedelta(seconds=min(60, 5 * 2 ** (job.attempt_count - 1)))  # exponential backoff
     else: job.status = job.stage = "failed"; job.completed_at = now()
     db.commit()

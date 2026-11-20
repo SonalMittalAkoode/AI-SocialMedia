@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  Compass,
   Sparkles,
   Files,
   Users,
@@ -24,19 +25,29 @@ import { Badge, Button, Logo, Modal } from "@/components/ui";
 import { useStore } from "@/store/provider";
 import { AuthSession } from "@/components/auth-session";
 import { CompanySelector } from "@/components/company-controls";
+import { useSocialAccounts } from "@/store/use-social-accounts";
 const navigation = [
   { path: "", label: "Overview", icon: LayoutDashboard },
   { path: "/companies", label: "Companies & Brands", icon: Building2 },
   { path: "/content-studio", label: "AI Content Studio", icon: Sparkles },
   { path: "/posts", label: "Post Library", icon: Files },
+  { path: "/trends", label: "Trend Research", icon: Compass },
   { path: "/competitors", label: "Competitor Intelligence", icon: Users },
   { path: "/calendar", label: "Content Calendar", icon: CalendarDays },
   { path: "/accounts", label: "Social Accounts", icon: Link2 },
   { path: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
 ];
 export function DashboardShell({ children }: { children: ReactNode }) {
-  const { state, ready, authStatus, signOut, isSigningOut } = useStore();
+  const { state, ready, authStatus, signOut, isSigningOut, companyId, companySwitching } =
+    useStore();
+  // Real per-company connection count (stored state); refreshed on focus/visibility.
+  const social = useSocialAccounts(
+    authStatus === "authenticated" ? companyId : null,
+    60000,
+  );
+  const connectedAccounts = social.data?.connected_count ?? 0;
   const pathname = usePathname();
+  const isOverview = pathname === "/dashboard";
   const router = useRouter();
   const [mobile, setMobile] = useState(false);
   const [collapsed, setCollapsedState] = useState(false);
@@ -80,6 +91,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <p>Opening your workspace…</p>
       </div>
     );
+  const companyName = companySwitching ? "Switching company…" : companyId ? state.workspace.company.name : "Workspace";
   return (
     <div className={`dashboard-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
       <div
@@ -103,7 +115,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </div>
           <div>
             <strong>{state.workspace.name}</strong>
-            <span>{state.workspace.company.name}</span>
+              <span>{companyName}</span>
           </div>
           <ChevronDown size={15} />
         </button>
@@ -120,6 +132,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               <Icon size={18} />
               <span>{label}</span>
               {path === "/content-studio" && <Badge tone="green">AI</Badge>}
+              {path === "/accounts" && connectedAccounts > 0 && (
+                <span
+                  className="sidebar-count"
+                  aria-label={`${connectedAccounts} connected`}
+                >
+                  {connectedAccounts}
+                </span>
+              )}
             </Link>
           ))}
         </nav>
@@ -165,7 +185,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="dashboard-main">
         <header className="dashboard-header">
-          <div className="header-breadcrumb">
+          <div className="header-breadcrumb" aria-label="Current location">
             <button
               className="icon-button mobile-menu"
               aria-label="Open navigation"
@@ -177,7 +197,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             >
               <Menu size={20} />
             </button>
-            <span>{state.workspace.name}</span>
+            <span title={companyName}>{companyName}</span>
             <span>/</span>
             <strong>{title}</strong>
           </div>
@@ -187,7 +207,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               aria-label="Switch active workspace or company"
               onClick={() => setWorkspace(true)}
             >
-              <span>{state.workspace.company.name}</span>
+              <span>{companyName}</span>
               <ChevronDown size={15} />
             </button>
             <form
@@ -206,12 +226,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               />
               <kbd>↵</kbd>
             </form>
-            <Button className="crm-create-post" asChild>
+            {!isOverview && <Button className="crm-create-post" asChild>
               <Link href="/dashboard/content-studio" aria-label="Create Post">
                 <Plus size={16} />
                 <span>Create Post</span>
               </Link>
-            </Button>
+            </Button>}
             <button
               className="user-avatar"
               aria-label="Open profile menu"
@@ -252,6 +272,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             setMobile(false);
           }}
         />
+        {companySwitching && <p role="status">Loading selected company…</p>}
         <Button asChild variant="secondary">
           <Link href="/dashboard/brand" onClick={() => setWorkspace(false)}>
             Edit brand profile

@@ -8,11 +8,11 @@ import {
   Dispatch,
   SetStateAction,
 } from "react";
-import { DemoState } from "@/types";
+import { CompanyProfile, DemoState } from "@/types";
 import { initialState } from "@/data/fixtures";
 import { SessionUser } from "@/lib/auth-api";
 import * as api from "@/lib/company-api";
-import { applyExtraction, ApprovedFields } from "@/lib/brand-extraction-api";
+import { applyExtraction, ApprovedFields, importWebsiteBrandMedia, websiteHost } from "@/lib/brand-extraction-api";
 import {
   applyBundle,
   emptyCompanyState,
@@ -21,13 +21,13 @@ import {
   preferencePayload,
   companyCacheKey,
   selectionKey,
+  onboardingState,
 } from "@/lib/company-state";
 import {
   parseState,
   serializeState,
   userStorageKey,
   STORAGE_KEY,
-  steps,
 } from "@/lib/storage";
 interface Selection {
   workspaceId?: string;
@@ -45,6 +45,7 @@ export function useCompanyPersistence(
   const [companies, setCompanies] = useState<api.CompanyRecord[]>([]);
   const [busy, setBusy] = useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [companySwitching, setCompanySwitching] = useState(false);
   const [error, setError] = useState("");
   const [recoverableDraft, setRecoverableDraft] = useState<DemoState | null>(
     null,
@@ -101,19 +102,15 @@ export function useCompanyPersistence(
       } catch {}
       selection.current = chosen;
       const available = await api.listWorkspaces();
-      setWorkspaces(available);
       const active = chosen.newWorkspace
         ? null
         : available.find((w) => w.id === chosen.workspaceId) ||
           available[0] ||
           null;
-      workspace.current = active;
       const all = active ? await api.listCompanies(active.id) : [];
-      setCompanies(all);
       const company = chosen.newCompany
         ? null
         : all.find((c) => c.id === chosen.companyId) || all[0] || null;
-      setCompanyId(company?.id || null);
       let old: DemoState | null = null;
       try {
         const raw = localStorage.getItem(userStorageKey(verified.id));
@@ -201,7 +198,11 @@ export function useCompanyPersistence(
           JSON.stringify(selection.current),
         );
       } catch {}
+      workspace.current = active;
       current.current = result;
+      setWorkspaces(available);
+      setCompanies(all);
+      setCompanyId(company?.id || null);
       return result;
     },
     [],
@@ -283,13 +284,15 @@ export function useCompanyPersistence(
         const expectedBrand =
           bundle.current.brand.revision +
           (bundle.current.brand.is_confirmed ? 1 : 0);
+        const websiteChanged = websiteHost(bundle.current.company.website_url) !== websiteHost(payload.website_url);
+        const canClearLogo = websiteChanged && !bundle.current.brand.is_confirmed && !!bundle.current.brand.logo_url;
         await api.patchCompany(bundle.current.company.id, {
           ...payload,
           revision: bundle.current.company.revision,
           expected_brand_revision: bundle.current.brand.revision,
         });
         const refreshed = await api.getCompanyBundle(bundle.current.company.id);
-        if (refreshed.brand.revision !== expectedBrand)
+        if (refreshed.brand.revision !== expectedBrand && !(canClearLogo && refreshed.brand.revision === expectedBrand + 1 && !refreshed.brand.logo_url))
           throw new api.CompanyApiError(
             "The brand changed in another session. Reload server data before retrying; your draft is preserved.",
             409,
@@ -305,8 +308,36 @@ export function useCompanyPersistence(
       const loaded = await business(snapshot);
       return accept(loaded, snapshot);
     });
+  const saveOnboardingBusiness = (details: Partial<CompanyProfile>) =>
+    write(async () => {
+      const previous = current.current;
+      const profile = { ...previous.workspace.company, ...details };
+      if (bundle.current?.brand.is_confirmed) {
+        if ((details.website && details.website !== bundle.current.company.website_url)
+          || (details.description && (profile.description !== previous.workspace.company.description || profile.name !== previous.workspace.company.name || profile.industry !== previous.workspace.company.industry)))
+          throw new Error("Use Brand Settings to change a confirmed business, or add a new company.");
+        return bundle.current.company.id;
+      }
+      const snapshot = { ...previous, workspace: { ...previous.workspace, company: profile } };
+      const loaded = await business(snapshot);
+      if (details.description && (loaded.brand.description !== profile.description || loaded.brand.display_name !== profile.name))
+        loaded.brand = await api.patchBrand(loaded.company.id, {
+          display_name: profile.name,
+          description: profile.description,
+          revision: loaded.brand.revision,
+        });
+      accept(loaded, snapshot);
+      return loaded.company.id;
+    });
+  const prepareWebsiteBrand = (id: string, job: string) =>
+    write(async () => {
+      if (bundle.current?.company.id !== id) throw new Error("Company selection changed.");
+      await api.prepareWebsiteBrand(id, job);
+      return accept(await api.getCompanyBundle(id));
+    });
   const prepareExtraction = () =>
     write(async () => {
+      const previous = bundle.current;
       const snapshot = {
         ...current.current,
         workspace: {
@@ -329,8 +360,20 @@ export function useCompanyPersistence(
           name: host,
         };
       }
+      const payload = companyPayload(snapshot);
+      if (previous && previous.company.website_url === payload.website_url && previous.company.source_social_url === payload.source_social_url)
+        return previous.company.id;
       const loaded = await business(snapshot);
-      accept(loaded, snapshot);
+      const accepted = accept(loaded, snapshot);
+      if (previous) {
+        const draft = snapshot.workspace.company;
+        const fresh = accepted.workspace.company;
+        const updated = { ...accepted, workspace: { ...accepted.workspace, company: {
+          ...draft, website: fresh.website, identity: { ...draft.identity, logo: fresh.identity.logo },
+        } } };
+        current.current = updated;
+        setState(updated);
+      }
       return loaded.company.id;
     });
   const approveExtraction = (id: string, fields: ApprovedFields) =>
@@ -363,12 +406,52 @@ export function useCompanyPersistence(
       );
       return accept(await api.getCompanyBundle(loaded.company.id));
     });
-  const saveBrand = (confirm = false) =>
+  const prefillBrandMedia = (job: string, company?: string) =>
     write(async () => {
+      const previous = bundle.current;
+      if (!previous || (company && previous.company.id !== company)) return false;
+      const id = previous.company.id;
+      const result = await importWebsiteBrandMedia(id, job, previous.brand.revision, !!company);
+      if (result.brand_revision === previous.brand.revision) return false;
+      const loaded = await api.getCompanyBundle(id);
+      if (bundle.current?.company.id !== id) return false;
+      bundle.current = loaded;
       const snapshot = current.current;
+      const { onboarding } = applyBundle(snapshot, workspace.current!, loaded);
+      const draft = snapshot.workspace.company;
+      const savedLines = new Set(loaded.brand.content_guidelines?.split("\n") || []);
+      const removedLines = new Set((previous.brand.content_guidelines?.split("\n") || []).filter((line) => !savedLines.has(line)));
+      const next = {
+        ...snapshot,
+        onboarding,
+        workspace: {
+          ...snapshot.workspace,
+          company: {
+            ...draft,
+            guidelines: draft.guidelines.split("\n").filter((line) => !removedLines.has(line)).join("\n"),
+            identity: {
+              ...draft.identity,
+              logo: loaded.brand.logo_url || "",
+              colors: draft.identity.colors.length ? draft.identity.colors : loaded.brand.brand_colors,
+            },
+          },
+        },
+      };
+      current.current = next;
+      setState(next);
+      return true;
+    });
+  const saveBrand = (confirm = false, profile?: CompanyProfile) =>
+    write(async () => {
+      const previous = current.current;
+      const snapshot = profile
+        ? { ...previous, workspace: { ...previous.workspace, company: profile } }
+        : previous;
       const loaded = await business(snapshot);
+      const { source, ...payload } = brandPayload(snapshot);
       const updated = await api.patchBrand(loaded.company.id, {
-        ...brandPayload(snapshot),
+        ...payload,
+        ...(!profile && { source }),
         revision: loaded.brand.revision,
       });
       if (confirm) await api.confirmBrand(loaded.company.id, updated.revision);
@@ -398,60 +481,45 @@ export function useCompanyPersistence(
       bundle.current.progress = progress;
       setState((s) => ({
         ...s,
-        onboarding: {
-          step: Math.min(4, progress.completed_steps.length),
-          currentStep: steps.indexOf(progress.current_step),
-          completed: progress.status === "completed",
-        },
+        onboarding: onboardingState(progress, bundle.current!.brand.is_confirmed),
       }));
     });
-  const navigate = (step: api.OnboardingStep) =>
+  const confirmOnboardingBrand = () =>
     write(async () => {
-      if (!bundle.current) return;
-      const progress = await api.navigateStep(
-        bundle.current.company.id,
-        bundle.current.progress.revision,
-        step,
-      );
-      bundle.current.progress = progress;
-      setState((s) => ({
-        ...s,
-        onboarding: {
-          ...s.onboarding,
-          currentStep: steps.indexOf(progress.current_step),
-        },
-      }));
+      const loaded = bundle.current;
+      if (!loaded) throw new Error("Save your company first.");
+      const id = loaded.company.id;
+      loaded.brand = await api.confirmBrand(id, loaded.brand.revision);
+      if (!loaded.progress.completed_steps.includes("brand") && loaded.progress.completed_steps.includes("business"))
+        loaded.progress = await api.completeStep(id, loaded.progress.revision, "brand");
+      return accept(await api.getCompanyBundle(id));
     });
-  const finish = () =>
+  const finish = (goals: api.OnboardingGoals) =>
     write(async () => {
-      if (!bundle.current) throw new Error("Save your company first.");
-      const id = bundle.current.company.id;
-      const generated = await api.completeStep(
-        id,
-        bundle.current.progress.revision,
-        "generate",
-      );
-      bundle.current.progress = generated;
-      const completed = await api.finishOnboarding(id, generated.revision);
-      bundle.current.progress = completed;
-      setState((s) => ({
-        ...s,
-        onboarding: {
-          step: 4,
-          currentStep: 4,
-          completed: completed.status === "completed",
-        },
-      }));
+      const loaded = bundle.current;
+      if (!loaded) throw new Error("Save your company first.");
+      const id = loaded.company.id;
+      const result = await api.finalizeOnboarding(id, loaded.progress.revision, loaded.preferences.revision, goals);
+      // Finalization is already committed. A momentary read failure must not
+      // strand the user on Goals or cause a second generation request.
+      try { accept(await api.getCompanyBundle(id)); }
+      catch { setState((s) => ({ ...s, onboarding: { step: 2, currentStep: 2, completed: true } })); }
+      return result;
     });
   async function selectCompany(workspaceId: string, companyId?: string) {
     return write(async () => {
       if (!user.current) throw new Error("Sign in first.");
-      cacheCurrent();
-      selection.current = { workspaceId, companyId };
-      persistSelection();
-      const next = await loadForUser(user.current);
-      setState(next);
-      return "/dashboard";
+      setCompanySwitching(true);
+      try {
+        cacheCurrent();
+        selection.current = { workspaceId, companyId };
+        persistSelection();
+        const next = await loadForUser(user.current);
+        setState(next);
+        return "/dashboard";
+      } finally {
+        setCompanySwitching(false);
+      }
     });
   }
   async function reload() {
@@ -532,16 +600,20 @@ export function useCompanyPersistence(
     workspaces,
     companies,
     companyId,
+    companySwitching,
     companyBusy: busy,
     persistenceError: error,
     recoverableDraft,
     saveBusiness,
+    saveOnboardingBusiness,
+    prepareWebsiteBrand,
     prepareExtraction,
     approveExtraction,
+    prefillBrandMedia,
     saveBrand,
     savePreferences,
     advance,
-    navigate,
+    confirmOnboardingBrand,
     finish,
     selectCompany,
     reloadCompany: reload,

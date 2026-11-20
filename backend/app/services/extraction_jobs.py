@@ -90,7 +90,7 @@ def succeed(db, job_id, token, analysis, website, usage, model, duration):
         return False
     if not db.scalar(select(Result.id).where(Result.job_id == job.id)):
         data = analysis.model_dump(mode="json")
-        db.add(Result(job_id=job.id, company_id=job.company_id, extracted_data=data, source_evidence=data["field_evidence"], source_pages=[{"url": p["url"], "title": p["title"], "logo_candidates":p.get("logo_candidates",[]),"style_colors":p.get("style_colors",[])} for p in website["pages"]], warnings=(website["warnings"] + data["warnings"])[:25], token_usage=usage, model_identifier=model))
+        db.add(Result(job_id=job.id, company_id=job.company_id, extracted_data=data, source_evidence=data["field_evidence"], source_pages=[{"url": p["url"], "title": p["title"], "logo_candidates":p.get("logo_candidates",[]),"style_colors":p.get("style_colors",[]),"stylesheet_urls":p.get("stylesheet_urls",[])} for p in website["pages"]], warnings=(website["warnings"] + data["warnings"])[:25], token_usage=usage, model_identifier=model))
     job.status = job.stage = "completed"
     job.completed_at = now()
     job.lease_token = job.lease_expires_at = None
@@ -117,10 +117,16 @@ def fail(db, job_id, token, error):
 
 
 def apply(db, company, result, data):
+    from app.services.brand_provenance import prior_website_research, without_prior_website_guidelines
+
     onboarding.check_revision(company, data.company_revision)
     onboarding.check_revision(company.brand, data.brand_revision)
     try:
-        company_data, brand_data = adapt_approved(data, company.brand.content_guidelines)
+        before = company.brand.content_guidelines
+        guidelines = without_prior_website_guidelines(before, prior_website_research(db, company), result.extracted_data)
+        company_data, brand_data = adapt_approved(data, guidelines)
+        if guidelines != before:
+            brand_data.setdefault('content_guidelines', guidelines)
     except ValueError:
         raise HTTPException(422, "Selected fields are not compatible with the brand profile. Check the field values.") from None
     # Only fields actually offered in this result may be approved, with user edits.

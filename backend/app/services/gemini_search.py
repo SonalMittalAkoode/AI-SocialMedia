@@ -184,7 +184,7 @@ class GeminiGroundedSearchProvider:
                 await client.aio.aclose()
 
 
-def begin_request(db, company, user, key, context):
+def begin_request(db, company, user, key, context, provider="gemini", model=None, kind="competitor_discovery"):
     # Operational journal only: no response cache, no background worker handoff.
     db.execute(text("SELECT pg_advisory_xact_lock(560001)"))
     if db.scalar(select(AIJob.id).where(AIJob.company_id == company.id, AIJob.request_key == key)):
@@ -193,23 +193,29 @@ def begin_request(db, company, user, key, context):
         count = db.scalar(select(func.count()).select_from(AIJob).where(column == value, AIJob.created_at > now() - timedelta(hours=1)))
         if count >= maximum:
             raise HTTPException(429, "AI usage limit reached; try later")
-    if db.scalar(select(AIJob.id).where(AIJob.company_id == company.id, AIJob.kind == "competitor_discovery", AIJob.status.in_(["queued", "running"]))):
-        raise HTTPException(409, "A competitor discovery request is already active for this company")
+    if db.scalar(select(AIJob.id).where(AIJob.company_id == company.id, AIJob.kind == kind, AIJob.status.in_(["queued", "running"]))):
+        label = "trend search" if kind == "trend_search" else "competitor discovery"
+        raise HTTPException(409, f"A {label} request is already active for this company")
     if db.scalar(select(func.count()).select_from(AIJob).where(AIJob.status.in_(["queued", "running"]))) >= limits.max_queue:
         raise HTTPException(503, "AI queue is full; try later")
+    payload = {"provider": provider, "mode": "display_only"}
+    if kind == "trend_search":
+        from app.services.ai_queue import check_daily_budget
+        check_daily_budget(db, company)
+    else:
+        payload["context"] = public_context(context)
     record = AIJob(id=uuid4(), company_id=company.id, requested_by=user.id,
-                   kind="competitor_discovery", request_key=key,
-                   payload={"provider": "gemini", "mode": "display_only", "context": public_context(context)},
+                   kind=kind, request_key=key, payload=payload,
                    status="running", stage="searching", attempt_count=1, started_at=now(),
                    lease_token=uuid4(), lease_expires_at=now() + timedelta(seconds=limits.grounding_timeout + 20),
-                   model_identifier=limits.grounding_model or settings.GEMINI_MODEL)
+                   model_identifier=model or limits.grounding_model or settings.GEMINI_MODEL)
     db.add(record)
     request_id = record.id
     db.commit()
     return request_id
 
 
-def finish_request(db, request_id, usage, error=None):
+def finish_request(db, request_id, usage, error=None, provider="gemini"):
     record = db.scalar(select(AIJob).where(AIJob.id == request_id, AIJob.status == "running").with_for_update())
     if not record:
         db.rollback()
@@ -222,6 +228,6 @@ def finish_request(db, request_id, usage, error=None):
     record.token_usage = usage
     record.lease_token = record.lease_expires_at = None
     # No grounded answer, sources, citations, queries or suggestion HTML stored.
-    record.result = {"provider": "gemini", "display_only": True}
+    record.result = {"provider": provider, "display_only": True}
     db.commit()
     return True

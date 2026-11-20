@@ -48,6 +48,8 @@ export const summarySchema = z.object({
   recent_posts: z.array(postSchema),
   awaiting_approval: z.array(postSchema),
   upcoming_schedules: z.array(calendarSchema),
+  upcoming_scheduled_posts: z.number().optional(),
+  upcoming_active_schedules: z.array(calendarSchema).optional(),
   recent_generations: z.array(generationSchema),
   recent_activity: z.array(
     z.object({
@@ -78,6 +80,17 @@ export const summarySchema = z.object({
       researched: z.number(),
       approved: z.number(),
       informing_generation: z.number(),
+    })
+    .optional(),
+  social_account_stats: z
+    .object({
+      total: z.number(),
+      connected: z.number(),
+      limited: z.number(),
+      reconnect_required: z.number(),
+      error: z.number(),
+      connected_platforms: z.array(z.string()),
+      publishing_permission: z.number(),
     })
     .optional(),
   publishing_available: z.boolean(),
